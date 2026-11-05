@@ -22,6 +22,7 @@ from acr.megalinter import (
     MegaLinterError,
     run_megalinter,
 )
+from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
 
 DEFAULT_CONFIG = Path("equipos.yml")
@@ -203,6 +204,42 @@ def _megalinter(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _scanoss(args: argparse.Namespace) -> int:
+    """PB-10: send only fingerprints of repos/<id> to SCANOSS; write reports/<id>/scanoss.json."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr scanoss: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    failed = 0
+    for team in teams:
+        try:
+            path, report = write_scanoss(team.id, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+        except (ScanossError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        totals, excluded = report["totals"], report["excluded"]
+        print(
+            f"{team.id}: {totals['files_matched']} de {totals['files_scanned']} archivo(s) con "
+            f"coincidencias ({totals['matched_percent']}%), {excluded['files']} archivo(s) de "
+            f"dependencias excluidos -> {path.as_posix()}"
+        )
+    if failed:
+        print(f"acr scanoss: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -292,6 +329,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="tiempo máximo por equipo (por defecto: %(default)s minutos)",
     )
     megalinter.set_defaults(handler=_megalinter)
+
+    scanoss = subparsers.add_parser(
+        "scanoss",
+        help="busca código open source conocido con SCANOSS (solo envía huellas) y lo deja en "
+        "reports/<id>/scanoss.json",
+        description="Calcula en local las huellas de repos/<id>, quita las dependencias y envía "
+        "solo los hashes a SCANOSS. Nunca envía ni ejecuta el código del equipo.",
+    )
+    scanoss.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    scanoss.set_defaults(handler=_scanoss)
 
     analyze = subparsers.add_parser(
         "analyze",
