@@ -12,6 +12,7 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from acr import __version__
+from acr.config import load_config
 
 DEFAULT_CONFIG = Path("equipos.yml")
 
@@ -29,6 +30,18 @@ def _not_implemented(item: str) -> Handler:
         return EXIT_NOT_IMPLEMENTED
 
     return handler
+
+
+def _validate(args: argparse.Namespace) -> int:
+    """PB-5: report every problem in the input file; exit 1 if there is any."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es)", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+    print(f"{args.config}: válido ({config.evento.nombre}, {len(config.equipos)} equipo(s)).")
+    return EXIT_OK
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -52,7 +65,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="valida equipos.yml: campos obligatorios, ids y fechas",
         description="Valida el archivo de entrada sin obtener ni analizar repositorios.",
     )
-    validate.set_defaults(handler=_not_implemented("PB-5"))
+    validate.set_defaults(handler=_validate)
 
     fetch = subparsers.add_parser(
         "fetch",

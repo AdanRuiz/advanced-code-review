@@ -34,7 +34,7 @@ def test_version(capsys):
     assert __version__ in capsys.readouterr().out
 
 
-@pytest.mark.parametrize("command", COMMANDS)
+@pytest.mark.parametrize("command", ["fetch", "analyze"])
 def test_commands_not_implemented_yet(command, capsys):
     assert main([command]) == EXIT_NOT_IMPLEMENTED
     assert "no implementado" in capsys.readouterr().err

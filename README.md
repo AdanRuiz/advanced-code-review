@@ -57,7 +57,7 @@ python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
-Por ahora los comandos solo están registrados: responden "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
+`acr validate` revisa `equipos.yml` y lista todos los errores a la vez (campos faltantes, `id` inválidos o repetidos, fechas mal formadas o `fin` anterior a `inicio`); sale con código 0 si el archivo es válido y 1 si no. Los demás comandos solo están registrados: responden "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
