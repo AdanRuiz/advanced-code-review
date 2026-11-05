@@ -25,6 +25,7 @@ from acr.megalinter import (
     run_megalinter,
 )
 from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_report
+from acr.review import ReviewError, render_prompt, validate_team
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
 
@@ -324,6 +325,81 @@ def _analyze(args: argparse.Namespace) -> int:
     return EXIT_OK if result.ok else EXIT_ERROR
 
 
+def _review_prompt(args: argparse.Namespace) -> int:
+    """PB-13: print the Claude Code prompt for the assisted review of one team."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    team = next((team for team in config.equipos if team.id == args.team_id), None)
+    if team is None:
+        print(f"acr review-prompt: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+        return EXIT_ERROR
+    try:
+        prompt = render_prompt(team, config.evento, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+    except (ReviewError, OSError) as exc:
+        print(f"acr review-prompt: error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    if args.output is not None:
+        try:
+            args.output.write_text(prompt, encoding="utf-8")
+        except OSError as exc:
+            print(f"acr review-prompt: error: {exc}", file=sys.stderr)
+            return EXIT_ERROR
+        print(f"{team.id}: prompt -> {args.output.as_posix()}")
+        return EXIT_OK
+    print(prompt, end="" if prompt.endswith("\n") else "\n")
+    return EXIT_OK
+
+
+def _review_validate(args: argparse.Namespace) -> int:
+    """PB-13: validate reports/<id>/review.json and web-plagiarism.json against their schemas."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr review-validate: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    failed = 0
+    for team in teams:
+        try:
+            checks = validate_team(team.id, DEFAULT_REPORTS_DIR)
+        except (ReviewError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        if all(check.ok for check in checks):
+            print(f"{team.id}: {', '.join(check.name for check in checks)} válidos")
+            continue
+        failed += 1
+        for check in checks:
+            path = check.path.as_posix()
+            if not check.exists:
+                print(f"{team.id}: falta {path}; corre la revisión asistida "
+                      f"('acr review-prompt {team.id}')", file=sys.stderr)
+            elif check.errors:
+                print(f"{path}: {len(check.errors)} error(es)", file=sys.stderr)
+                for error in check.errors:
+                    print(f"  - {error}", file=sys.stderr)
+            else:
+                print(f"{path}: válido")
+    if failed:
+        print(f"acr review-validate: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _report(args: argparse.Namespace) -> int:
     """PB-14: write reports/<id>/reporte.md from every result available in reports/."""
     config, errors = load_config(args.config)
@@ -499,6 +575,30 @@ def build_parser() -> argparse.ArgumentParser:
         help="tiempo máximo de MegaLinter por equipo (por defecto: %(default)s minutos)",
     )
     analyze.set_defaults(handler=_analyze)
+
+    review_prompt = subparsers.add_parser(
+        "review-prompt",
+        help="imprime el prompt de Claude Code para la revisión asistida de un equipo",
+        description="Imprime el prompt para que Claude Code revise repos/<id> a partir de sus "
+        "reportes y escriba review.json y web-plagiarism.json. No ejecuta Claude Code ni el código.",
+    )
+    review_prompt.add_argument("team_id", metavar="ID", help="equipo a revisar")
+    review_prompt.add_argument(
+        "-o", "--output", type=Path, default=None, metavar="ARCHIVO",
+        help="escribe el prompt en este archivo (UTF-8) en lugar de imprimirlo",
+    )
+    review_prompt.set_defaults(handler=_review_prompt)
+
+    review_validate = subparsers.add_parser(
+        "review-validate",
+        help="valida review.json y web-plagiarism.json de la revisión asistida",
+        description="Valida reports/<id>/review.json y reports/<id>/web-plagiarism.json contra sus "
+        "esquemas JSON (acr/schemas/), la checklist de IA y OWASP LLM, y que no haya secretos en claro.",
+    )
+    review_validate.add_argument(
+        "team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)"
+    )
+    review_validate.set_defaults(handler=_review_validate)
 
     report = subparsers.add_parser(
         "report",
