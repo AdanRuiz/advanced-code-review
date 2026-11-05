@@ -123,7 +123,17 @@ Escribe en `reports/dolos/`:
 
 Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `PATH` (PB-1) y al menos dos equipos obtenidos; los equipos sin obtener se avisan y no se comparan (código de salida 1). Si Dolos falla, se conservan los reportes anteriores.
 
-`acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
+`acr analyze` corre el análisis completo, en el orden de la spec, para todos los equipos o solo para `ID`:
+
+1. Por equipo: `fetch`, `git-signals`, `scc`, `megalinter` y `scanoss` (mismas opciones `--max-zip-mb`, `--engine`, `--image` y `--timeout-min`). Si falla la obtención, ese equipo se detiene ahí; si falla un paso posterior, se registra y se siguen los demás pasos y equipos.
+2. Al final, `dolos` una sola vez sobre todos los equipos obtenidos (también los que no se volvieron a analizar), para que la matriz quede al día. Con menos de dos equipos obtenidos se omite.
+
+El avance queda en `reports/status.json`, que se reescribe en cada paso:
+
+- `teams`: un elemento por equipo de `equipos.yml` con `state` (`pendiente`, `obteniendo`, `analizando`, `listo` o `error`), el paso en curso (`step`), el resultado de cada paso (`steps`: `ok`, `error`, `omitido`), `started_at`/`finished_at`, `error` y `log` (`<id>/analyze.log`, relativo a `reports/`, con la bitácora de la última corrida).
+- `dolos`: estado, equipos comparados y hora de la última corrida de Dolos.
+
+Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sistema operativo en `reports/.locks/`; si ya hay un análisis en curso para un equipo, no se lanza otro y se avisa. Si el proceso muere, el candado se libera solo y el equipo que quedó "analizando" pasa a `error` ("análisis interrumpido") en la siguiente escritura. Sale con código 1 si algún equipo terminó con error, estaba ocupado o Dolos falló. La revisión asistida con Claude Code y las exportaciones (PB-13, PB-14, PB-23) aún no forman parte del pipeline.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
