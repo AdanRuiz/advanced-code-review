@@ -33,14 +33,17 @@ Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una 
 5. **Dolos** una sola vez sobre todos los repositorios: similitud entre equipos.
 6. **Claude Code** lee `reports/<equipo>/` (sin volver a escanear), revisa el código y hace la búsqueda de plagio en la web.
 7. **Exportar** los resultados de scc, SCANOSS, Dolos y Claude Code como JSON/CSV en `reports/` (ver [Formato de resultados](#formato-de-resultados)).
-8. **Publicar**: dashboard en Grafana (Prometheus, Loki y archivos vía Infinity) y reporte Markdown por equipo como respaldo.
+8. **Generar exportaciones**: reporte Markdown y PDF por equipo, y un ZIP con todos (ver [Exportación de reportes](#exportación-de-reportes)).
+9. **Consultar** el dashboard local en Grafana (Prometheus, Loki y archivos vía Infinity) y **compartir** las exportaciones.
 
 | Corre como | Componentes |
 | --- | --- |
 | Contenedor de un solo uso | MegaLinter |
-| CLI directo | scc, SCANOSS, Dolos |
-| Servicio permanente | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/` (solo red interna) |
+| CLI directo | scc, SCANOSS, Dolos, md-to-pdf |
+| Servicio local (`localhost`) | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/` |
 | Asistente | Claude Code |
+
+Todo corre en el equipo del revisor; nada se publica en la web.
 
 ## Stack de componentes
 
@@ -55,7 +58,8 @@ Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una 
 | 7 | Plagio entre equipos | Dolos | CLI | Una vez, todos los repositorios juntos | Plagio | Grafana (Infinity) | Gratis |
 | 8 | Revisión asistida | Claude Code (`/code-review`, `/security-review`) | Lee reportes 1–7 | Por repositorio | Factibilidad, calidad, IA responsable | Grafana (Infinity) + reporte Markdown | Suscripción existente |
 | 9 | Plagio de ideas en la web | Claude Code + búsqueda web | Búsqueda por título, objetivo y palabras clave | Por proyecto | Plagio | Grafana (Infinity) | Suscripción existente |
-| — | Dashboard compartido | Grafana + Loki + Prometheus + [Infinity](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/) (Apache 2.0) | Servicio permanente | Todos los equipos | Presentación | Jueces y organizadores | Gratis |
+| — | Dashboard local | Grafana + Loki + Prometheus + [Infinity](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/) (Apache 2.0) | Servicio local | Todos los equipos | Consulta del revisor | Revisor | Gratis |
+| — | Exportación de reportes | [md-to-pdf](https://github.com/simonhaenisch/md-to-pdf) (MIT) + ZIP | CLI | Por equipo y global | Presentación | Jueces y organizadores | Gratis |
 
 ## MegaLinter
 
@@ -78,9 +82,9 @@ MegaLinter corre una sola vez por repositorio y cubre los pasos 2 a 5. Las herra
 
 Fuentes: [MegaLinter – linters de repositorio v9.6](https://megalinter.io/9.6.0/descriptors/repository/), [API Reporter v10](https://megalinter.io/10.0.0/reporters/ApiReporter/).
 
-## Dashboard compartido
+## Dashboard local
 
-Grafana reúne en 6 páginas, unidas por un navbar, todos los resultados del framework: calidad y seguridad (MegaLinter) y tamaño, plagio y revisión asistida (archivos JSON/CSV).
+Grafana reúne en 6 páginas, unidas por un navbar, todos los resultados del framework: calidad y seguridad (MegaLinter) y tamaño, plagio y revisión asistida (archivos JSON/CSV). Corre solo en `localhost`; los jueces y organizadores reciben los reportes exportados.
 
 ### Componentes
 
@@ -90,7 +94,7 @@ Grafana reúne en 6 páginas, unidas por un navbar, todos los resultados del fra
 | Prometheus | Métricas numéricas de MegaLinter por repositorio y linter |
 | Loki | Detalle de hallazgos de MegaLinter: corridas, linters, reglas y archivos |
 | Plugin Infinity | Lee los JSON/CSV de scc, SCANOSS, Dolos y Claude Code por URL |
-| Servidor de archivos | Sirve `reports/` en solo lectura a Grafana, solo dentro de la red interna |
+| Servidor de archivos | Sirve `reports/` en solo lectura en `localhost`: datos para Infinity y descargas de los botones de exportación |
 
 ### Navegación
 
@@ -98,10 +102,12 @@ Grafana reúne en 6 páginas, unidas por un navbar, todos los resultados del fra
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Advanced Code Review                                Equipo: [Todos ▾]    │
 │ [Resumen] [Equipo] [Calidad] [Seguridad] [Plagio] [Calificación]         │
+│                         Exportar: [PDF equipo] [MD equipo] [ZIP todos]   │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
 - **Navbar:** *dashboard links* de Grafana; todas las páginas llevan la etiqueta `advanced-code-review` y se muestran como botones arriba.
+- **Botones de exportación:** *dashboard links* de tipo enlace que apuntan al servidor de archivos y usan la variable `equipo` en la URL (ver [Exportación de reportes](#exportación-de-reportes)).
 - **Variable `equipo`:** selector Todos / uno / varios; se conserva al cambiar de página (*include current template variable values*).
 - **Variable `herramienta`:** solo en Calidad y Seguridad, filtra por linter.
 - **Clic en un equipo** en cualquier tabla abre la página Equipo filtrada.
@@ -185,13 +191,28 @@ Cada herramienta deja su resultado en `reports/` para que Infinity lo lea:
 | `reports/<equipo>/web-plagiarism.json` | Claude Code | Proyectos encontrados: enlace, fecha, nivel de parecido |
 | `reports/<equipo>/git-signals.json` | Script de git | Fecha del primer commit, número de commits, si es fork |
 
-Limitaciones de Infinity: no está pensado para volúmenes grandes de datos (suficiente para un hackathon) y lee por URL, por eso `reports/` se sirve con un servidor de archivos interno.
+Limitaciones de Infinity: no está pensado para volúmenes grandes de datos (suficiente para un hackathon) y lee por URL, por eso `reports/` se sirve con un servidor de archivos local.
 
-### Acceso
+### Exportación de reportes
 
-- Una cuenta de solo lectura (rol *Viewer*) para cada juez y organizador; el revisor como administrador.
-- El servicio debe estar en un servidor o red accesible para ellos; en una laptop solo lo ve su dueño.
-- Sin acceso anónimo ni enlaces públicos: el código es de estudiantes.
+La exportación a PDF integrada de Grafana es de pago, así que el pipeline genera los reportes de antemano y los botones del navbar solo los descargan.
+
+| Botón | Descarga | URL (servidor de archivos) | Se genera con |
+| --- | --- | --- | --- |
+| PDF equipo | Reporte del equipo seleccionado en PDF | `/reports/${equipo}/reporte.pdf` | md-to-pdf a partir del Markdown |
+| MD equipo | Reporte del equipo seleccionado en Markdown | `/reports/${equipo}/reporte.md` | Plantilla de [Entregables](#entregables) |
+| ZIP todos | Reportes de todos los equipos + CSV de Dolos | `/reports/todos.zip` | Script al final del pipeline |
+
+- Con `equipo = Todos`, los botones PDF y MD se ocultan o apuntan al ZIP.
+- **Datos de una gráfica:** cada panel ya permite *Inspect → Data → Download CSV* en Grafana, sin configuración extra.
+- **Captura de una página:** impresión del navegador (Ctrl+P → Guardar como PDF).
+- Si se vuelve a analizar un repositorio, las exportaciones se regeneran en el mismo paso.
+
+### Cómo se comparte
+
+- El dashboard no se publica: corre en `localhost`, sin cuentas ni acceso externo.
+- Jueces y organizadores reciben el ZIP o los PDF por equipo por el canal que indiquen los organizadores.
+- Para mostrarlo en vivo: compartir pantalla en una reunión.
 
 Fuentes: [MegaLinter – dashboards de Grafana](https://megalinter.io/10.0.0/observability/grafana/), [MegaLinter – observabilidad y métricas](https://megalinter.io/10.0.0/observability/), [Infinity data source](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/).
 
@@ -237,7 +258,7 @@ Claude Code cubre lo que las herramientas no miden: arquitectura, factibilidad y
 
 ## Entregables
 
-Se entregan dos cosas a jueces y organizadores: el dashboard de Grafana con los resultados de todos los pasos y, como respaldo, un reporte Markdown por equipo.
+Jueces y organizadores reciben un reporte por equipo en PDF y Markdown, y un ZIP con todos; el dashboard de Grafana queda como herramienta local del revisor.
 
 **Plantilla del reporte por equipo:**
 
@@ -281,7 +302,7 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 | Un equipo usa un lenguaje sin linter en MegaLinter o una herramienta *no-code* | La revisión asistida (paso 8) lo cubre |
 | SCANOSS gratuito llega a su límite de consultas | Priorizar archivos propios del equipo; excluir dependencias |
 | Dolos no soporta un lenguaje usado | Comparar solo los lenguajes soportados y reportarlo |
-| Grafana no accesible para los jueces | Compartir los reportes SARIF/Markdown como respaldo |
+| Reportes exportados desactualizados tras re-analizar | Regenerar exportaciones en el mismo paso del pipeline |
 | Falsos positivos de las herramientas o de la IA | Toda conclusión la valida el revisor |
 
 **Pendientes con los organizadores:**
@@ -290,7 +311,7 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 - [ ] ¿Las reglas permiten plantillas, código previo o código generado con IA?
 - [ ] ¿La detección de plagio es parte del rol de Code Reviewer?
 - [ ] ¿Hay rúbrica oficial del evento para alinear los reportes?
-- [ ] ¿Cuántos jueces tendrán acceso al dashboard?
+- [ ] ¿Por qué canal se entregan los reportes a jueces y organizadores?
 
 ## Fuentes
 

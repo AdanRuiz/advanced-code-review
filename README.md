@@ -25,7 +25,8 @@ Todo el stack es open source y gratuito.
 | [MegaLinter](https://megalinter.io/) | Calidad de código, Semgrep, Betterleaks (secretos) y Trivy (dependencias) en una sola pasada |
 | [SCANOSS](https://osskb.org/) | Plagio de código open source conocido (envía solo huellas, no el código) |
 | [Dolos](https://dolos.ugent.be/) | Similitud de código entre equipos |
-| Grafana + Loki + Prometheus + Infinity | Dashboard compartido de 6 páginas con navbar: resumen, equipo, calidad, seguridad, plagio y calificación |
+| Grafana + Loki + Prometheus + Infinity | Dashboard local de 6 páginas con navbar: resumen, equipo, calidad, seguridad, plagio y calificación |
+| [md-to-pdf](https://github.com/simonhaenisch/md-to-pdf) | Exporta el reporte de cada equipo a PDF; los botones del dashboard lo descargan |
 | Claude Code | Revisión asistida y búsqueda de plagio de ideas en la web |
 
 Claude Code requiere una suscripción propia.
@@ -45,7 +46,7 @@ El código revisado pertenece a los equipos participantes:
 
 - No se ejecuta ni se modifica.
 - Las carpetas `repos/` y `reports/` están en `.gitignore` y nunca deben subirse a este repositorio.
-- El dashboard requiere cuenta; no se publica de forma anónima.
+- El dashboard corre solo en local; se comparte mediante reportes exportados (PDF, Markdown y ZIP).
 
 ## Licencia
 
