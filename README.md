@@ -59,6 +59,7 @@ python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con
 python -m acr scanoss [ID]           # código open source conocido con SCANOSS, solo huellas (PB-10)
 python -m acr dolos                  # similitud de código entre todos los equipos con Dolos (PB-11)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
+python -m acr report [ID]            # reporte Markdown por equipo en reports/<id>/reporte.md (PB-14)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
@@ -134,6 +135,16 @@ El avance queda en `reports/status.json`, que se reescribe en cada paso:
 - `dolos`: estado, equipos comparados y hora de la última corrida de Dolos.
 
 Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sistema operativo en `reports/.locks/`; si ya hay un análisis en curso para un equipo, no se lanza otro y se avisa. Si el proceso muere, el candado se libera solo y el equipo que quedó "analizando" pasa a `error` ("análisis interrumpido") en la siguiente escritura. Sale con código 1 si algún equipo terminó con error, estaba ocupado o Dolos falló. La revisión asistida con Claude Code y las exportaciones (PB-13, PB-14, PB-23) aún no forman parte del pipeline.
+
+`acr report` arma `reports/<id>/reporte.md` con la plantilla de [Entregables](SPEC.md#entregables) a partir de los resultados que ya estén en `reports/` (no vuelve a analizar):
+
+- **Resumen:** lenguajes y tamaño (`scc.json`), enlace al dashboard (`--dashboard-url`, `http://localhost:3000` por defecto) y hallazgos críticos (CVE críticas/altas con corrección, secretos y hallazgos de Semgrep de nivel error).
+- **Calidad:** errores y advertencias por linter de calidad y archivos con más hallazgos, desde `megalinter.sarif`.
+- **Seguridad:** CVE de `trivy.sarif` (el indicador principal cuenta solo críticas/altas con versión corregida), patrones inseguros de `semgrep.sarif` por CWE y OWASP Top 10, y secretos de Betterleaks **solo con tipo, archivo y línea, nunca el valor**.
+- **Plagio:** coincidencias de `scanoss.json`, pares de `reports/dolos/pairs.csv` con este equipo y señales de `git-signals.json`.
+- **Recomendaciones:** derivadas de los hallazgos anteriores.
+
+Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. La revisión asistida y la búsqueda web (`review.json`, `web-plagiarism.json`) quedan como pendientes hasta que PB-13 defina su formato. El texto que viene de los repositorios (rutas, reglas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
