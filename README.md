@@ -57,6 +57,7 @@ python -m acr git-signals [ID]       # señales del historial de git (PB-7)
 python -m acr scc [ID]               # lenguajes, líneas y archivos con scc (PB-8)
 python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con MegaLinter (PB-9)
 python -m acr scanoss [ID]           # código open source conocido con SCANOSS, solo huellas (PB-10)
+python -m acr dolos                  # similitud de código entre todos los equipos con Dolos (PB-11)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -107,6 +108,20 @@ Ambos pasos corren en una carpeta temporal vacía, así que un `scanoss.json` de
 - `matches`: por archivo, tipo (`file` o `snippet`), porcentaje, líneas, componente (proyecto), proveedor, versión, `purl`, licencias y enlaces (`url`, `file_url`).
 
 Una coincidencia indica similitud, no copia confirmada. Requiere `scanoss-py` en el `PATH` (PB-1). Si un equipo falla (por ejemplo, se alcanzó el límite de consultas gratuitas), se reporta, se conserva el `scanoss.json` anterior y se sigue con los demás (código de salida 1).
+
+`acr dolos` compara el código de todos los equipos entre sí con Dolos, en una sola corrida sobre todos los repositorios obtenidos:
+
+- Agrupa los archivos de `repos/<id>` por lenguaje según su extensión y corre Dolos una vez por cada lenguaje que usen al menos dos equipos. Deja fuera `.git` y las mismas carpetas de dependencias que SCANOSS. Los archivos de lenguajes que Dolos no soporta no se comparan y se cuentan por extensión.
+- Dolos solo lee los archivos, que recibe en un CSV de entrada (`filename`, `label` = id del equipo). Corre con `--output-format csv`: no levanta su servidor web y nada sale de la máquina.
+- Los pares de archivos del mismo equipo se ignoran.
+
+Escribe en `reports/dolos/`:
+
+- `pairs.csv`: una fila por cada par de equipos (todos, para la matriz), con `team_a`, `team_b`, `similarity` (la mayor similitud entre dos de sus archivos, de 0 a 1 como en Dolos), `file_pairs` (pares de archivos similares), `longest_fragment`, `total_overlap` y los dos archivos más parecidos (`file_a`, `file_b`).
+- `file-pairs.csv`: cada par de archivos de equipos distintos que reporta Dolos, con su lenguaje y similitud.
+- `dolos.json`: equipos y lenguajes comparados, archivos por equipo y archivos excluidos.
+
+Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `PATH` (PB-1) y al menos dos equipos obtenidos; los equipos sin obtener se avisan y no se comparan (código de salida 1). Si Dolos falla, se conservan los reportes anteriores.
 
 `acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 
