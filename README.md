@@ -6,7 +6,7 @@
 
 Framework open source para revisar de forma estática repositorios de hackathons, sin importar el lenguaje en que estén programados.
 
-> **Estado:** especificación. La implementación aún no existe; el diseño completo está en [SPEC.md](SPEC.md).
+> **Estado:** especificación lista; implementación por fases en curso. Diseño en [SPEC.md](SPEC.md), prioridades y fases en [MOSCOW.md](MOSCOW.md). Un [agente de Claude Code](docs/agente.md) toma los issues del backlog y abre un PR por ítem.
 
 ## Qué evalúa
 

@@ -304,6 +304,29 @@ La exportación a PDF integrada de Grafana es de pago, así que el pipeline gene
 
 Fuentes: [MegaLinter – dashboards de Grafana](https://megalinter.io/10.0.0/observability/grafana/), [MegaLinter – observabilidad y métricas](https://megalinter.io/10.0.0/observability/), [Infinity data source](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/).
 
+## Interfaz Next.js con JSON (Should)
+
+Prioridad **Should** (ver [MOSCOW.md](MOSCOW.md)): una interfaz propia en Next.js que lee solo archivos JSON/CSV y no necesita Grafana, Prometheus ni Loki. Grafana local sigue siendo la interfaz **Must** del primer evento; esta la reemplaza cuando esté completa y permite publicar en Vercel más adelante.
+
+**Por qué:** ninguna herramienta convierte dashboards de Grafana a Next.js (Perses migra con pérdidas y sus paquetes npm están poco documentados), y la mitad de las gráficas ya viene de archivos. Si todo sale como JSON, la interfaz es una sola app.
+
+| Aspecto | Decisión |
+| --- | --- |
+| Framework | Next.js (App Router) + React + TypeScript |
+| Gráficas | Librería de gráficas de React (por ejemplo, Recharts); mismas 6 páginas, mismas gráficas y mismo navbar que en Grafana |
+| Datos de MegaLinter | Su reporte JSON local (`reports/<equipo>/megalinter.json`) en lugar de Prometheus/Loki |
+| Resto de datos | Los mismos archivos de [Formato de resultados](#formato-de-resultados) |
+| Configuración | Página propia en Next.js que usa la API del orquestador |
+| Exportación | Mismos botones; descargan de `reports/` |
+| Ejecución | `localhost`, sin cuentas |
+
+**Camino a Vercel (Could, fuera del primer evento):**
+
+- El análisis sigue local: Vercel no ejecuta contenedores ni análisis largos (límite por función de 300 s por defecto).
+- Solo se suben los JSON de resultados a almacenamiento privado (Vercel Blob privado), nunca el código de los equipos.
+- Publicar en la web exige login y revisar privacidad: reabre las decisiones de [Cómo se comparte](#cómo-se-comparte).
+- Las subidas de ZIP de más de 4.5 MB irían directo a Blob, no a través de una función.
+
 ## Detección de plagio
 
 El plagio se revisa en tres niveles. Una coincidencia indica similitud, no copia confirmada, y la decisión final es del revisor.
