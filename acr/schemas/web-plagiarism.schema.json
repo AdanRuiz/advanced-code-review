@@ -1,0 +1,79 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AdanRuiz/advanced-code-review/acr/schemas/web-plagiarism.schema.json",
+  "title": "reports/<id>/web-plagiarism.json",
+  "description": "Búsqueda de plagio de ideas en la web con Claude Code (PB-13, SPEC.md \"Detección de plagio\", nivel 3, y \"Formato de resultados\"). Una coincidencia indica similitud, no copia confirmada.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "team_id",
+    "tool",
+    "generated_at",
+    "status",
+    "keywords",
+    "queries",
+    "matches"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "team_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "tool": { "const": "claude-code" },
+    "generated_at": {
+      "type": "string",
+      "description": "Fecha y hora ISO 8601 con zona horaria",
+      "minLength": 1
+    },
+    "status": { "enum": ["draft", "validated"] },
+    "keywords": {
+      "type": "array",
+      "description": "Título, objetivo y palabras clave distintivas usadas en la búsqueda",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "queries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["query", "source"],
+        "properties": {
+          "query": { "type": "string", "minLength": 1 },
+          "source": { "$ref": "#/$defs/source" }
+        }
+      }
+    },
+    "matches": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/match" }
+    }
+  },
+  "$defs": {
+    "source": {
+      "enum": ["github", "devpost", "hackathon_gallery", "product_hunt", "tutorial", "other"]
+    },
+    "match": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "url", "source", "published", "before_event", "similarity", "evidence"],
+      "properties": {
+        "title": { "type": "string", "minLength": 1 },
+        "url": { "type": "string", "pattern": "^https?://[^\\s]+$" },
+        "source": { "$ref": "#/$defs/source" },
+        "published": {
+          "type": ["string", "null"],
+          "description": "Fecha del hallazgo (AAAA-MM-DD) o null si no se conoce"
+        },
+        "before_event": {
+          "type": ["boolean", "null"],
+          "description": "Si la fecha del hallazgo es anterior a evento.inicio; null si no se conoce"
+        },
+        "similarity": {
+          "enum": ["idea", "structure", "text"],
+          "description": "Nivel de parecido: idea, estructura o texto"
+        },
+        "evidence": { "type": "string", "minLength": 1 },
+        "notes": { "type": "string" }
+      }
+    }
+  }
+}

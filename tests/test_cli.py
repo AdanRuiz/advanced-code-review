@@ -7,7 +7,18 @@ import pytest
 from acr import __version__
 from acr.cli import DEFAULT_CONFIG, EXIT_OK, build_parser, main
 
-COMMANDS = ["validate", "fetch", "git-signals", "scc", "megalinter", "scanoss", "dolos", "analyze"]
+COMMANDS = [
+    "validate",
+    "fetch",
+    "git-signals",
+    "scc",
+    "megalinter",
+    "scanoss",
+    "dolos",
+    "analyze",
+    "review-prompt",
+    "review-validate",
+]
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 

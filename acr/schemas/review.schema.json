@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/AdanRuiz/advanced-code-review/acr/schemas/review.schema.json",
+  "title": "reports/<id>/review.json",
+  "description": "Revisión asistida con Claude Code (PB-13, SPEC.md \"Revisión asistida con Claude Code\" y \"Formato de resultados\"). Borrador que valida el revisor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "team_id",
+    "tool",
+    "generated_at",
+    "status",
+    "summary",
+    "findings",
+    "ai_checklist",
+    "owasp_llm"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "team_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
+    "tool": { "const": "claude-code" },
+    "generated_at": {
+      "type": "string",
+      "description": "Fecha y hora ISO 8601 con zona horaria",
+      "minLength": 1
+    },
+    "status": {
+      "enum": ["draft", "validated"],
+      "description": "draft: lo escribió Claude Code; validated: el revisor lo revisó"
+    },
+    "summary": { "type": "string", "minLength": 1 },
+    "findings": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/finding" }
+    },
+    "ai_checklist": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["uses_ai", "items"],
+      "properties": {
+        "uses_ai": {
+          "type": "boolean",
+          "description": "Si el proyecto integra un modelo o proveedor de IA"
+        },
+        "providers": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/check" }
+        }
+      }
+    },
+    "owasp_llm": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/check" }
+    }
+  },
+  "$defs": {
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["file", "line"],
+      "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Ruta relativa a la raíz del repositorio, con /"
+        },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "criterion", "severity", "file", "line", "title", "description"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^F[0-9]+$" },
+        "criterion": {
+          "enum": ["feasibility", "quality", "security", "responsible_ai", "plagiarism"]
+        },
+        "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Ruta relativa a la raíz del repositorio, con /"
+        },
+        "line": { "type": "integer", "minimum": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "description": { "type": "string", "minLength": 1 },
+        "recommendation": { "type": "string" },
+        "source": {
+          "enum": [
+            "claude-code",
+            "scc",
+            "megalinter",
+            "semgrep",
+            "trivy",
+            "betterleaks",
+            "scanoss",
+            "dolos",
+            "git-signals"
+          ],
+          "description": "Reporte que originó o confirma el hallazgo"
+        },
+        "cwe": { "type": "string", "pattern": "^CWE-[0-9]+$" },
+        "owasp_llm": { "type": "string", "pattern": "^LLM(0[1-9]|10)$" }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "status", "notes", "evidence"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "status": {
+          "enum": ["pass", "fail", "not_applicable", "unknown"],
+          "description": "pass ✓, fail ✗, not_applicable (no usa IA o no aplica), unknown (sin evidencia en el código)"
+        },
+        "notes": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/location" }
+        }
+      }
+    }
+  }
+}
