@@ -45,6 +45,22 @@ Claude Code requiere una suscripción propia.
 5. Hacer la revisión asistida con Claude Code a partir de los reportes generados.
 6. Entregar el dashboard y un reporte Markdown por equipo.
 
+## Uso
+
+Requiere Python 3.12 y las dependencias de `requirements-dev.txt`.
+
+```sh
+python -m acr --help                 # lista los comandos
+python -m acr validate               # valida equipos.yml (PB-5)
+python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (PB-6)
+python -m acr analyze [ID]           # corre el análisis completo (PB-12)
+python -m acr --config otro.yml ...  # usa otro archivo de entrada
+```
+
+Por ahora los comandos solo están registrados: responden "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
+
+Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
+
 ## Privacidad
 
 El código revisado pertenece a los equipos participantes:
