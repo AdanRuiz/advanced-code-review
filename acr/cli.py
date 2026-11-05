@@ -28,6 +28,7 @@ from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_report
 from acr.review import ReviewError, render_prompt, validate_team
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
+from acr.security import SECURITY_FILE, SecurityError, write_security
 
 DEFAULT_CONFIG = Path("equipos.yml")
 
@@ -322,7 +323,44 @@ def _analyze(args: argparse.Namespace) -> int:
     )
     if result.dolos == "error":
         print("acr analyze: Dolos falló; se conservan sus reportes anteriores", file=sys.stderr)
-    return EXIT_OK if result.ok else EXIT_ERROR
+    # PB-21: the Seguridad page reads every team, also the ones not analyzed in this run.
+    security_ok = _write_security([team.id for team in config.equipos], "acr analyze")
+    return EXIT_OK if result.ok and security_ok else EXIT_ERROR
+
+
+def _write_security(team_ids: list[str], command: str) -> bool:
+    try:
+        path, data = write_security(team_ids, DEFAULT_REPORTS_DIR)
+    except (SecurityError, OSError) as exc:
+        print(f"{command}: error al escribir {SECURITY_FILE}: {exc}", file=sys.stderr)
+        return False
+    teams = data["teams"]
+    print(
+        f"Seguridad: {sum(t['cve_fixable_critical_high'] for t in teams)} CVE crítica(s)/alta(s) con "
+        f"corrección, {sum(t['cve_total'] for t in teams)} CVE en total, "
+        f"{sum(t['semgrep_findings'] for t in teams)} hallazgo(s) de Semgrep y "
+        f"{sum(t['secrets'] for t in teams)} secreto(s) en {len(teams)} equipo(s) -> {path.as_posix()}"
+    )
+    missing = [t["team"] for t in teams if not (t["trivy"] and t["semgrep"] and t["secrets_scanned"])]
+    if missing:
+        print(
+            f"aviso: sin SARIF de Trivy, Semgrep o MegaLinter para {', '.join(missing)}; "
+            "corre 'acr megalinter'",
+            file=sys.stderr,
+        )
+    return True
+
+
+def _security(args: argparse.Namespace) -> int:
+    """PB-21: write reports/security.json (Seguridad page) from the SARIF of every team."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+    ok = _write_security([team.id for team in config.equipos], "acr security")
+    return EXIT_OK if ok else EXIT_ERROR
 
 
 def _review_prompt(args: argparse.Namespace) -> int:
@@ -575,6 +613,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="tiempo máximo de MegaLinter por equipo (por defecto: %(default)s minutos)",
     )
     analyze.set_defaults(handler=_analyze)
+
+    security = subparsers.add_parser(
+        "security",
+        help="resume CVE, Semgrep y secretos de todos los equipos en reports/security.json",
+        description="Lee trivy.sarif, semgrep.sarif y megalinter.sarif de cada equipo y deja en "
+        "reports/security.json los datos de la página Seguridad del dashboard. No vuelve a "
+        "analizar y nunca escribe el valor de un secreto.",
+    )
+    security.set_defaults(handler=_security)
 
     review_prompt = subparsers.add_parser(
         "review-prompt",

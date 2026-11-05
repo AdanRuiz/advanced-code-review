@@ -396,6 +396,10 @@ def test_cli_analyze_all(tmp_path, monkeypatch, capsys, fake_tools):
     assert fake_tools[-1] == "dolos:equipo-01,equipo-02"
     states = [team["state"] for team in read_status(tmp_path / "reports")["teams"]]
     assert states == ["listo", "listo"]
+    # PB-21: the Seguridad page data is refreshed for every team at the end.
+    assert "-> reports/security.json" in out
+    security = json.loads((tmp_path / "reports" / "security.json").read_text(encoding="utf-8"))
+    assert [team["team"] for team in security["teams"]] == ["equipo-01", "equipo-02"]
 
 
 def test_cli_analyze_one_team_and_errors(tmp_path, monkeypatch, capsys, fake_tools):
