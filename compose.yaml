@@ -1,0 +1,118 @@
+# Servicios locales del dashboard (PB-15, SPEC.md "Dashboard local").
+#
+# Solo localhost y sin acceso anónimo:
+# - Grafana (http://localhost:3000) y el servidor de archivos de reports/ (http://localhost:8080/reports/)
+#   publican su puerto solo en 127.0.0.1 y piden usuario y contraseña.
+# - Loki y Prometheus no publican ningún puerto: viven en la red interna "backend" (sin salida a
+#   internet) y solo los alcanzan Grafana y el servidor de archivos.
+#
+# Las contraseñas no se guardan en el repositorio: se pasan como variables de entorno o en un
+# archivo .env junto a este (está en .gitignore). Ver README.md, sección "Dashboard local".
+#
+#   podman compose up -d     (o: docker compose up -d)
+
+name: acr
+
+services:
+  grafana:
+    image: docker.io/grafana/grafana-oss:12.2.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      GF_SERVER_ROOT_URL: http://localhost:3000
+      GF_SECURITY_ADMIN_USER: ${ACR_GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${ACR_GRAFANA_ADMIN_PASSWORD:?define ACR_GRAFANA_ADMIN_PASSWORD}
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_SECURITY_COOKIE_SAMESITE: strict
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_AUTH_BASIC_ENABLED: "false"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_ALLOW_ORG_CREATE: "false"
+      GF_PUBLIC_DASHBOARDS_ENABLED: "false"
+      GF_SNAPSHOTS_EXTERNAL_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - frontend
+      - backend
+    depends_on:
+      - loki
+      - prometheus
+      - files
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  loki:
+    image: docker.io/grafana/loki:3.5.0
+    restart: unless-stopped
+    command:
+      - -config.file=/etc/loki/loki.yaml
+    volumes:
+      - ./services/loki/loki.yaml:/etc/loki/loki.yaml:ro
+      - loki-data:/loki
+    networks:
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  prometheus:
+    image: docker.io/prom/prometheus:v3.5.0
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    volumes:
+      - ./services/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    networks:
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  files:
+    image: docker.io/library/caddy:2.10.0-alpine
+    restart: unless-stopped
+    entrypoint:
+      - /bin/sh
+      - /etc/caddy/entrypoint.sh
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      ACR_FILES_USER: ${ACR_FILES_USER:-acr}
+      ACR_FILES_PASSWORD: ${ACR_FILES_PASSWORD:?define ACR_FILES_PASSWORD}
+    volumes:
+      - ./services/files/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./services/files/entrypoint.sh:/etc/caddy/entrypoint.sh:ro
+      - ./reports:/srv/reports:ro
+    tmpfs:
+      - /data
+      - /config
+    read_only: true
+    networks:
+      - frontend
+      - backend
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+networks:
+  frontend: {}
+  backend:
+    internal: true
+
+volumes:
+  grafana-data: {}
+  loki-data: {}
+  prometheus-data: {}

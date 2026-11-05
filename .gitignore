@@ -4,6 +4,9 @@ reports/
 entregas/
 equipos.yml
 
+# Contraseñas de los servicios locales (compose.yaml)
+.env
+
 # Python
 .venv/
 __pycache__/
