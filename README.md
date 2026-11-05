@@ -57,7 +57,17 @@ python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
-`acr validate` revisa `equipos.yml` y lista todos los errores a la vez (campos faltantes, `id` inválidos o repetidos, fechas mal formadas o `fin` anterior a `inicio`); sale con código 0 si el archivo es válido y 1 si no. Los demás comandos solo están registrados: responden "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
+`acr validate` revisa `equipos.yml` y lista todos los errores a la vez (campos faltantes, `id` inválidos o repetidos, fechas mal formadas o `fin` anterior a `inicio`); sale con código 0 si el archivo es válido y 1 si no.
+
+`acr fetch` deja cada equipo en `repos/<id>` según su `repo`:
+
+- **URL git** (`https://`, `http://`, `ssh://`, `git://` o `usuario@host:ruta`): `git clone` con historial completo, en la rama `rama` si se indica y fijado en `commit` si se indica. Usa las credenciales de git del revisor; los enlaces simbólicos se obtienen como archivos normales. Otros esquemas (`file://`, `ext::`) se rechazan.
+- **Carpeta local:** se copia sin seguir enlaces simbólicos.
+- **ZIP** (`.zip`): se descomprime rechazando rutas peligrosas (*zip slip*) y enlaces simbólicos, con un límite de tamaño descomprimido (`--max-zip-mb`, 1024 MB por defecto) y de 100 000 entradas.
+
+`rama` y `commit` solo aplican a URL git. Cada equipo se obtiene en una carpeta temporal y reemplaza a `repos/<id>` solo si todo salió bien; los archivos quedan en solo lectura. Si un equipo falla, se reporta y se sigue con los demás (código de salida 1). Las rutas relativas se toman desde el directorio actual. El código obtenido nunca se ejecuta.
+
+`acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
