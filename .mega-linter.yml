@@ -1,0 +1,57 @@
+# Configuración de MegaLinter para Advanced Code Review (PB-9, SPEC.md "MegaLinter").
+#
+# `acr megalinter` monta este archivo en el contenedor y lo usa en lugar de cualquier
+# `.mega-linter.yml` que traiga el repositorio del equipo (MEGALINTER_CONFIG).
+# El repositorio se monta en solo lectura y los reportes se escriben fuera de él.
+
+# Analizar todo el repositorio, no solo los cambios, y nunca modificarlo.
+VALIDATE_ALL_CODEBASE: true
+APPLY_FIXES: none
+
+# Calidad: linters del lenguaje detectado automáticamente (no se fija ENABLE_LINTERS).
+# Seguridad del código: Semgrep · Secretos: Betterleaks · Dependencias: Trivy.
+# Se desactivan las herramientas que duplican a las activas.
+DISABLE_LINTERS:
+  # Secretos (duplican a Betterleaks; Gitleaks está deprecado desde v9.6)
+  - REPOSITORY_GITLEAKS
+  - REPOSITORY_TRUFFLEHOG
+  - REPOSITORY_SECRETLINT
+  # Dependencias (duplican a Trivy)
+  - REPOSITORY_OSV_SCANNER
+  - REPOSITORY_GRYPE
+
+# Semgrep: reglas de OWASP Top 10 y CWE, sin enviar métricas (AGENTS.md: nada sale de la máquina).
+REPOSITORY_SEMGREP_RULESETS:
+  - p/owasp-top-ten
+  - p/cwe-top-25
+REPOSITORY_SEMGREP_ARGUMENTS:
+  - --metrics=off
+
+# Betterleaks revisa también el historial de git; los secretos se ocultan en todas las salidas
+# (AGENTS.md: los secretos nunca se muestran en claro).
+REPOSITORY_BETTERLEAKS_ARGUMENTS:
+  - --redact
+
+# Salidas por repositorio en reports/<id>/ (respaldo si Grafana no está disponible).
+SARIF_REPORTER: true
+SARIF_REPORTER_FILE_NAME: megalinter.sarif
+JSON_REPORTER: true
+JSON_REPORTER_FILE_NAME: megalinter.json
+MARKDOWN_SUMMARY_REPORTER: true
+MARKDOWN_SUMMARY_REPORTER_FILE_NAME: megalinter.md
+TEXT_REPORTER: true
+
+# Nada se publica fuera de la máquina. El API Reporter hacia Loki/Prometheus locales se
+# configura en PB-16, cuando existan los servicios de PB-15.
+API_REPORTER: false
+LLM_ADVISOR_ENABLED: false
+FILEIO_REPORTER: false
+EMAIL_REPORTER: false
+GITHUB_COMMENT_REPORTER: false
+GITHUB_STATUS_REPORTER: false
+GITLAB_COMMENT_REPORTER: false
+AZURE_COMMENT_REPORTER: false
+BITBUCKET_COMMENT_REPORTER: false
+UPDATED_SOURCES_REPORTER: false
+FLAVOR_SUGGESTIONS: false
+PRINT_ALPACA: false

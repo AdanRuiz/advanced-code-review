@@ -55,6 +55,7 @@ python -m acr validate               # valida equipos.yml (PB-5)
 python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (PB-6)
 python -m acr git-signals [ID]       # señales del historial de git (PB-7)
 python -m acr scc [ID]               # lenguajes, líneas y archivos con scc (PB-8)
+python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con MegaLinter (PB-9)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -83,6 +84,14 @@ Si `inicio`/`fin` no tienen zona horaria se toman en la hora local del revisor. 
 - `totals`: número de lenguajes y la suma de los mismos campos para todo el repositorio.
 
 Requiere `scc` en el `PATH` (PB-1). Se aplican las exclusiones por defecto de scc (`.git` y lo que indique `.gitignore`). Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1); un `scc.json` anterior solo se reemplaza si scc terminó bien.
+
+`acr megalinter` corre el contenedor de MegaLinter v10 (`docker.io/oxsecurity/megalinter:v10`, cambiable con `--image`) una vez por equipo, con `podman` o, si no está, `docker` (`--engine` para elegir):
+
+- `repos/<id>` se monta **en solo lectura** como espacio de trabajo; los linters solo leen el código y nunca lo ejecutan ni lo corrigen (`APPLY_FIXES: none`).
+- Usa siempre el [`.mega-linter.yml`](.mega-linter.yml) de este proyecto, montado en solo lectura (un `.mega-linter.yml` del equipo se ignora): linters del lenguaje detectado automáticamente, Semgrep (OWASP Top 10 y CWE Top 25, sin métricas), Betterleaks con `--redact` y Trivy; desactiva Gitleaks, TruffleHog, Secretlint, OSV-Scanner y Grype, que duplican a los anteriores. Sin reportes que publiquen fuera de la máquina; el envío a Loki/Prometheus locales llega con PB-16.
+- Los reportes se escriben fuera del repositorio, en `reports/<id>/`: `megalinter.sarif`, `megalinter.json`, `megalinter.md`, `trivy.sarif` y `semgrep.sarif` (si esos linters corrieron) y la salida completa en `megalinter/`.
+
+Que los linters encuentren errores no es un fallo. Si el contenedor falla, no deja sus reportes o pasa del tiempo límite (`--timeout-min`, 60 por defecto; el contenedor se detiene), se conservan los reportes anteriores y se sigue con los demás equipos (código de salida 1). Requiere `podman` o `docker` y la imagen (PB-1); Semgrep y Trivy descargan sus reglas y su base de CVE, pero no envían el código.
 
 `acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 
