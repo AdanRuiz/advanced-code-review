@@ -13,6 +13,7 @@ from pathlib import Path
 
 from acr import __version__
 from acr.config import load_config
+from acr.dolos import DolosError, write_dolos
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
 from acr.megalinter import (
@@ -240,6 +241,55 @@ def _scanoss(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _dolos(args: argparse.Namespace) -> int:
+    """PB-11: run Dolos once over every fetched team and write reports/dolos/pairs.csv."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    fetched = []
+    for team in config.equipos:
+        if (DEFAULT_REPOS_DIR / team.id).is_dir():
+            fetched.append(team.id)
+        else:
+            print(f"{team.id}: aviso: no se compara; corre 'acr fetch {team.id}'", file=sys.stderr)
+    try:
+        result = write_dolos(fetched, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+    except (DolosError, OSError) as exc:
+        print(f"acr dolos: error: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+
+    summary = result.summary
+    compared = [lang["language"] for lang in summary["languages"] if lang["compared"]]
+    totals, excluded = summary["totals"], summary["excluded"]
+    print(
+        f"Dolos: {len(summary['teams'])} equipo(s), lenguajes comparados: "
+        f"{', '.join(compared) or 'ninguno'}; {totals['team_pairs_with_matches']} de "
+        f"{totals['team_pairs']} par(es) de equipos con archivos similares -> "
+        f"{result.pairs_path.as_posix()}"
+    )
+    for row in result.team_pairs[:5]:
+        if row["file_pairs"]:
+            print(
+                f"  {row['team_a']} ~ {row['team_b']}: {row['similarity']:.0%} "
+                f"({row['file_a']} ~ {row['file_b']})"
+            )
+    if excluded["unsupported_files"]:
+        extensions = ", ".join(excluded["unsupported_extensions"])
+        print(
+            f"aviso: {excluded['unsupported_files']} archivo(s) de lenguajes sin soporte en Dolos "
+            f"no se compararon ({extensions})",
+            file=sys.stderr,
+        )
+    if len(fetched) < len(config.equipos):
+        print(f"acr dolos: {len(config.equipos) - len(fetched)} equipo(s) sin obtener", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -339,6 +389,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scanoss.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
     scanoss.set_defaults(handler=_scanoss)
+
+    dolos = subparsers.add_parser(
+        "dolos",
+        help="compara el código de todos los equipos con Dolos y deja la similitud por par en "
+        "reports/dolos/pairs.csv",
+        description="Corre Dolos una sola vez sobre todos los repositorios obtenidos, por lenguaje. "
+        "Solo lee los archivos; nunca ejecuta el código ni lo envía fuera de la máquina.",
+    )
+    dolos.set_defaults(handler=_dolos)
 
     analyze = subparsers.add_parser(
         "analyze",
