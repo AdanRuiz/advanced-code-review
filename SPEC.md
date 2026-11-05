@@ -13,7 +13,8 @@ El framework revisa de forma estática los repositorios de los equipos participa
 | Criterio | Qué se evalúa |
 | --- | --- |
 | Factibilidad técnica | Lenguajes, tamaño, arquitectura, dependencias vulnerables o abandonadas |
-| Calidad del código | Hallazgos de linters, patrones inseguros, mantenibilidad |
+| Calidad del código | Hallazgos de linters, mantenibilidad |
+| Seguridad | Código inseguro (CWE / OWASP Top 10), dependencias con CVE, secretos expuestos |
 | Integración responsable de IA | Secretos expuestos, datos enviados al proveedor de IA, filtros, manejo de errores, supervisión humana |
 | Plagio | Código copiado de proyectos públicos, similitud entre equipos, ideas o proyectos ya existentes en la web |
 
@@ -51,9 +52,9 @@ Todo corre en el equipo del revisor; nada se publica en la web.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 1 | Reconocimiento de lenguaje y tamaño | [scc](https://github.com/boyter/scc) | CLI | Por repositorio | Factibilidad | Grafana (Infinity) | Gratis |
 | 2 | Calidad de código | [MegaLinter](https://megalinter.io/latest/supported-linters) (linters del lenguaje detectado) | 1 contenedor | Por repositorio | Calidad | Grafana | Gratis |
-| 3 | Seguridad del código | Semgrep (en MegaLinter) | Mismo contenedor | Por repositorio | Calidad | Grafana | Gratis |
-| 4 | Secretos expuestos | Betterleaks (en MegaLinter) | Mismo contenedor | Por repositorio, con historial git | IA responsable | Grafana | Gratis |
-| 5 | Dependencias vulnerables | Trivy (en MegaLinter) | Mismo contenedor | Por repositorio | Factibilidad | Grafana | Gratis |
+| 3 | Seguridad del código (CWE / OWASP Top 10) | Semgrep (en MegaLinter) | Mismo contenedor | Por repositorio | Seguridad | Grafana | Gratis |
+| 4 | Secretos expuestos | Betterleaks (en MegaLinter) | Mismo contenedor | Por repositorio, con historial git | Seguridad, IA responsable | Grafana | Gratis |
+| 5 | Dependencias vulnerables (CVE + CVSS) | Trivy (en MegaLinter) | Mismo contenedor | Por repositorio | Seguridad, factibilidad | Grafana | Gratis |
 | 6 | Plagio de código externo | [SCANOSS](https://osskb.org/) (osskb.org) | CLI | Por repositorio | Plagio | Grafana (Infinity) | Gratis, con límite de uso |
 | 7 | Plagio entre equipos | Dolos | CLI | Una vez, todos los repositorios juntos | Plagio | Grafana (Infinity) | Gratis |
 | 8 | Revisión asistida | Claude Code (`/code-review`, `/security-review`) | Lee reportes 1–7 | Por repositorio | Factibilidad, calidad, IA responsable | Grafana (Infinity) + reporte Markdown | Suscripción existente |
@@ -148,13 +149,19 @@ Origen de datos: **ML** = MegaLinter (Prometheus/Loki, nativo) · **Archivo** = 
 
 | Sección | Gráfica | Qué muestra | Origen |
 | --- | --- | --- | --- |
-| Indicadores | 3 tarjetas rojo/verde | Hallazgos de Semgrep · secretos (Betterleaks) · dependencias vulnerables (Trivy) | ML |
-| Por equipo | Barras agrupadas | Las 3 categorías por equipo | ML |
+| Indicadores | 4 tarjetas rojo/verde | **CVE críticas/altas con corrección disponible** (indicador principal) · hallazgos de Semgrep · secretos (Betterleaks) · total de CVE | Archivo (SARIF) + ML |
+| CVE por severidad | Barras apiladas por equipo | CVE de dependencias por severidad CVSS: crítica, alta, media, baja | Archivo (Trivy SARIF) |
+| Dependencias vulnerables | Tabla ordenada por CVSS | CVE, paquete, versión instalada, versión corregida, CVSS, severidad | Archivo (Trivy SARIF) |
+| Código inseguro por categoría | Barras por equipo | Hallazgos de Semgrep agrupados por CWE y categoría OWASP Top 10 | Archivo (Semgrep SARIF) |
+| Patrones inseguros | Tabla | Regla, CWE, severidad, archivo y línea | Archivo (Semgrep SARIF) |
 | Secretos expuestos | Tabla | Equipo, archivo y tipo de secreto, **sin mostrar el valor** | ML (Loki) |
-| Patrones inseguros | Tabla | Reglas de Semgrep activadas, con archivo y línea | ML (Loki) |
-| Dependencias | Tabla | Paquete, versión y vulnerabilidad (CVE) | ML (Loki) |
 
-MegaLinter no envía la severidad como métrica; separar por severidad requiere leer el SARIF de Semgrep y Trivy como Archivo.
+**Uso de CVE y CWE:**
+
+- **CVE** solo aplica a dependencias publicadas (Trivy): el código del equipo es nuevo y no tiene CVE propios.
+- **CWE / OWASP Top 10** clasifica las debilidades del código del equipo (Semgrep).
+- **Filtro de ruido:** en un hackathon es común tener muchos CVE por versiones viejas sin impacto real. El indicador principal cuenta solo CVE **críticas y altas con versión corregida disponible**, las que el equipo podía evitar actualizando.
+- MegaLinter no envía la severidad como métrica, por eso esta página lee el SARIF de Trivy y Semgrep vía Infinity.
 
 ### 5. Plagio
 
@@ -186,6 +193,8 @@ Cada herramienta deja su resultado en `reports/` para que Infinity lo lea:
 | --- | --- | --- |
 | `reports/<equipo>/scc.json` | scc | Lenguajes, líneas y archivos |
 | `reports/<equipo>/scanoss.json` | SCANOSS | Coincidencias por archivo: proyecto, licencia, enlace |
+| `reports/<equipo>/trivy.sarif` | Trivy (MegaLinter) | CVE, paquete, versiones instalada y corregida, CVSS, severidad |
+| `reports/<equipo>/semgrep.sarif` | Semgrep (MegaLinter) | Regla, CWE, categoría OWASP, severidad, archivo, línea |
 | `reports/dolos/pairs.csv` | Dolos | Similitud por par de equipos |
 | `reports/<equipo>/review.json` | Claude Code | Hallazgos: criterio, gravedad, archivo, línea, descripción; checklist de IA |
 | `reports/<equipo>/web-plagiarism.json` | Claude Code | Proyectos encontrados: enlace, fecha, nivel de parecido |
@@ -254,6 +263,14 @@ Claude Code cubre lo que las herramientas no miden: arquitectura, factibilidad y
 - [ ] ¿Hay supervisión de un adulto (padre, docente)?
 - [ ] ¿Los prompts del sistema están en el código y son revisables?
 
+**Riesgos de [OWASP Top 10 para aplicaciones LLM](https://genai.owasp.org/llm-top-10/) visibles en el código** (la prueba real es dinámica y queda fuera de este framework):
+
+- [ ] *Prompt injection*: ¿la entrada del usuario se concatena al prompt del sistema sin separar ni validar?
+- [ ] Manejo inseguro de la salida: ¿la respuesta del modelo se ejecuta, se inserta como HTML o se usa en consultas sin validar?
+- [ ] Divulgación de información sensible: ¿se envían datos personales o secretos al modelo?
+- [ ] Agencia excesiva: ¿el modelo puede ejecutar acciones (herramientas, APIs, archivos) sin confirmación humana?
+- [ ] Consumo sin límite: ¿hay límites de tokens, de peticiones o de costo?
+
 **Salida:** sección cualitativa del reporte por equipo, con referencias `archivo:línea` para cada hallazgo.
 
 ## Entregables
@@ -272,6 +289,10 @@ Jueces y organizadores reciben un reporte por equipo en PDF y Markdown, y un ZIP
 
 ## Factibilidad técnica
 ## Calidad del código
+## Seguridad
+- CVE críticas/altas con corrección disponible:
+- Código inseguro (CWE / OWASP Top 10):
+- Secretos expuestos:
 ## Integración responsable de IA
 ## Plagio
 - Código externo (SCANOSS):
@@ -312,6 +333,7 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 - [ ] ¿La detección de plagio es parte del rol de Code Reviewer?
 - [ ] ¿Hay rúbrica oficial del evento para alinear los reportes?
 - [ ] ¿Por qué canal se entregan los reportes a jueces y organizadores?
+- [ ] ¿La seguridad pesa dentro de "calidad del código" o se reporta como criterio aparte?
 
 ## Fuentes
 

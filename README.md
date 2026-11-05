@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="advanced-code-review.svg" alt="Advanced Code Review" width="280">
+</p>
+
 # Advanced Code Review
 
 Framework open source para revisar de forma estática repositorios de hackathons, sin importar el lenguaje en que estén programados.
@@ -9,7 +13,8 @@ Framework open source para revisar de forma estática repositorios de hackathons
 | Criterio | Qué se revisa |
 | --- | --- |
 | Factibilidad técnica | Lenguajes, tamaño, arquitectura y dependencias |
-| Calidad del código | Hallazgos de linters, patrones inseguros, mantenibilidad |
+| Calidad del código | Hallazgos de linters, mantenibilidad |
+| Seguridad | Código inseguro (CWE / OWASP Top 10), dependencias con CVE, secretos expuestos |
 | Integración responsable de IA | Secretos expuestos, datos enviados al proveedor de IA, filtros y supervisión humana |
 | Plagio | Código copiado de proyectos públicos, similitud entre equipos e ideas ya existentes en la web |
 
