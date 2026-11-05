@@ -1,0 +1,32 @@
+# Copia este archivo como equipos.yml y llénalo con los datos del evento.
+# equipos.yml está en .gitignore: nunca se sube al repositorio.
+# También se puede editar desde la página Configuración del dashboard.
+
+evento:
+  nombre: "Hackathon 2026"
+  inicio: 2026-11-01T09:00:00-06:00   # detecta commits previos al evento
+  fin:    2026-11-03T18:00:00-06:00   # detecta commits posteriores al cierre
+
+equipos:
+  # Repositorio git (URL)
+  - id: equipo-01                      # minúsculas, números y guiones
+    nombre: "Equipo Alfa"
+    proyecto: "Título del proyecto"
+    objetivo: "Problema que resuelve y para quién"
+    repo: https://github.com/org/proyecto-alfa
+    rama: main                         # opcional
+    commit: a1b2c3d                    # opcional: congela la versión entregada
+
+  # Carpeta local
+  - id: equipo-02
+    nombre: "Equipo Beta"
+    proyecto: "Título del proyecto"
+    objetivo: "Problema que resuelve y para quién"
+    repo: C:/entregas/proyecto-beta
+
+  # Archivo ZIP
+  - id: equipo-03
+    nombre: "Equipo Gamma"
+    proyecto: "Título del proyecto"
+    objetivo: "Problema que resuelve y para quién"
+    repo: C:/entregas/proyecto-gamma.zip

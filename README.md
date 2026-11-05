@@ -38,7 +38,7 @@ Claude Code requiere una suscripción propia.
 
 ## Flujo
 
-1. Clonar cada repositorio una vez, en solo lectura.
+1. Cargar los equipos en `equipos.yml` (ver [equipos.example.yml](equipos.example.yml)) o desde la página Configuración del dashboard, y obtener cada repositorio (URL git, carpeta o ZIP) una vez, en solo lectura.
 2. Reconocer lenguaje y tamaño con scc.
 3. Correr MegaLinter (un contenedor) y enviar los resultados a Grafana.
 4. Correr SCANOSS por repositorio y Dolos sobre todos los repositorios juntos.

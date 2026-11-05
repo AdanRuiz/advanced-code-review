@@ -27,7 +27,7 @@ El framework revisa de forma estática los repositorios de los equipos participa
 
 Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una sola vez. Solo MegaLinter y el dashboard usan contenedores.
 
-1. **Clonar** los repositorios en `repos/<equipo>` (solo lectura).
+1. **Leer la entrada** (`equipos.yml`, editable a mano o desde la página Configuración) y **obtener** cada repositorio en `repos/<id>` (solo lectura): clonar URL git, copiar carpeta o descomprimir ZIP. Ver [Entrada](#entrada).
 2. **Reconocer** con scc: lenguajes, líneas y archivos por repositorio.
 3. **MegaLinter** (1 contenedor por repositorio): calidad, Semgrep, Betterleaks y Trivy en una sola pasada. Envía resultados a Grafana y guarda SARIF/Markdown en `reports/<equipo>/`.
 4. **SCANOSS** por repositorio: coincidencias con código open source.
@@ -41,10 +41,85 @@ Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una 
 | --- | --- |
 | Contenedor de un solo uso | MegaLinter |
 | CLI directo | scc, SCANOSS, Dolos, md-to-pdf |
-| Servicio local (`localhost`) | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/` |
+| Servicio local (`localhost`) | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/`, orquestador (API + página Configuración) |
 | Asistente | Claude Code |
 
 Todo corre en el equipo del revisor; nada se publica en la web.
+
+## Entrada
+
+La entrada del sistema es un archivo `equipos.yml` con los datos del evento y la lista de equipos. Se edita a mano o desde la página **Configuración** del dashboard; ambos modifican el mismo archivo.
+
+```yaml
+evento:
+  nombre: "Hackathon 2026"           # aparece en el dashboard y los reportes
+  inicio: 2026-11-01T09:00:00-06:00  # detecta commits previos al evento (plagio)
+  fin:    2026-11-03T18:00:00-06:00  # detecta commits posteriores al cierre
+
+equipos:
+  - id: equipo-01                    # carpeta en repos/ y reports/, y filtro del dashboard
+    nombre: "Equipo Alfa"
+    proyecto: "Título del proyecto"
+    objetivo: "Problema que resuelve y para quién"   # alimenta la búsqueda de plagio web
+    repo: https://github.com/org/proyecto-alfa       # URL git
+    rama: main                       # opcional, por defecto la rama principal
+    commit: a1b2c3d                  # opcional: congela la versión entregada
+
+  - id: equipo-02
+    nombre: "Equipo Beta"
+    proyecto: "…"
+    objetivo: "…"
+    repo: C:/entregas/beta.zip       # también carpeta local o ZIP
+```
+
+| Campo | Obligatorio | Uso |
+| --- | --- | --- |
+| `evento.nombre` | Sí | Título en dashboard y reportes |
+| `evento.inicio`, `evento.fin` | Sí | Señales de git: commits antes del inicio o después del cierre |
+| `equipos[].id` | Sí | Identificador único; solo minúsculas, números y guiones |
+| `equipos[].nombre`, `proyecto` | Sí | Etiquetas en dashboard y reportes |
+| `equipos[].objetivo` | Sí | Palabras clave para la búsqueda de plagio en la web |
+| `equipos[].repo` | Sí | URL git, carpeta local o archivo ZIP |
+| `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último de la rama |
+
+**Reglas:**
+
+- `equipos.yml` contiene datos de los equipos: va en `.gitignore`. El repositorio solo incluye `equipos.example.yml`.
+- Para repositorios privados se usan las credenciales de git del revisor; nunca se guardan tokens en `equipos.yml`.
+- Si un `id` ya fue analizado y cambia su `repo` o `commit`, se vuelve a obtener y analizar solo ese equipo.
+
+### Página Configuración (desde el dashboard)
+
+Grafana es de solo lectura y el plugin de formularios (Business Forms) figura como de pago en el catálogo de Grafana, así que la configuración vive en un **orquestador** propio: un servicio local ligero (por ejemplo, Python + FastAPI) con una API y una página web. El navbar enlaza a ella con el botón **Configuración**.
+
+| Sección de la página | Qué permite |
+| --- | --- |
+| Evento | Editar nombre, inicio y fin |
+| Equipos | Tabla con alta, edición y baja de equipos (todos los campos de `equipos.yml`) |
+| Subir ZIP | Cargar la entrega de un equipo como ZIP; se guarda en `entregas/<id>.zip` |
+| Validar | Comprobar cada repo antes de analizar: URL accesible, rama y commit existen, ZIP válido |
+| Analizar | Botón por equipo y botón "Analizar todos"; lanza el pipeline completo |
+| Estado | Por equipo: pendiente / obteniendo / analizando / listo / error, hora de la última corrida y enlace al log |
+
+**API del orquestador:**
+
+| Método y ruta | Acción |
+| --- | --- |
+| `GET /api/evento`, `PUT /api/evento` | Leer y guardar los datos del evento |
+| `GET /api/equipos` | Listar equipos |
+| `POST /api/equipos`, `PUT /api/equipos/{id}`, `DELETE /api/equipos/{id}` | Alta, edición y baja (escriben `equipos.yml`) |
+| `POST /api/equipos/{id}/zip` | Subir la entrega ZIP de un equipo |
+| `POST /api/equipos/{id}/validar` | Validar el origen del repo |
+| `POST /api/analisis` (todos) o `POST /api/analisis/{id}` | Lanzar el análisis |
+| `GET /api/analisis/estado` | Estado por equipo (también lo lee Grafana vía Infinity) |
+
+**Seguridad del orquestador:**
+
+- Escucha solo en `localhost`; sin acceso externo.
+- Valida `id` (sin rutas ni caracteres especiales) y el origen del repo antes de usarlo.
+- Descomprime ZIP con protección contra rutas maliciosas (*zip slip*) y límite de tamaño.
+- Nunca ejecuta el código de los equipos: solo lo obtiene y lo pasa a las herramientas de análisis.
+- Un análisis a la vez por equipo; un segundo clic mientras corre no lanza otro.
 
 ## Stack de componentes
 
@@ -61,6 +136,7 @@ Todo corre en el equipo del revisor; nada se publica en la web.
 | 9 | Plagio de ideas en la web | Claude Code + búsqueda web | Búsqueda por título, objetivo y palabras clave | Por proyecto | Plagio | Grafana (Infinity) | Suscripción existente |
 | — | Dashboard local | Grafana + Loki + Prometheus + [Infinity](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/) (Apache 2.0) | Servicio local | Todos los equipos | Consulta del revisor | Revisor | Gratis |
 | — | Exportación de reportes | [md-to-pdf](https://github.com/simonhaenisch/md-to-pdf) (MIT) + ZIP | CLI | Por equipo y global | Presentación | Jueces y organizadores | Gratis |
+| — | Entrada y orquestación | Orquestador propio (API + página Configuración) sobre `equipos.yml` | Servicio local | Todos los equipos | Configuración y ejecución | Revisor | Gratis |
 
 ## MegaLinter
 
@@ -103,9 +179,11 @@ Grafana reúne en 6 páginas, unidas por un navbar, todos los resultados del fra
 ┌──────────────────────────────────────────────────────────────────────────┐
 │ Advanced Code Review                                Equipo: [Todos ▾]    │
 │ [Resumen] [Equipo] [Calidad] [Seguridad] [Plagio] [Calificación]         │
-│                         Exportar: [PDF equipo] [MD equipo] [ZIP todos]   │
+│ [Configuración ⚙]        Exportar: [PDF equipo] [MD equipo] [ZIP todos]  │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
+
+- **Configuración:** enlace a la página del orquestador para cargar equipos y lanzar análisis (ver [Página Configuración](#página-configuración-desde-el-dashboard)).
 
 - **Navbar:** *dashboard links* de Grafana; todas las páginas llevan la etiqueta `advanced-code-review` y se muestran como botones arriba.
 - **Botones de exportación:** *dashboard links* de tipo enlace que apuntan al servidor de archivos y usan la variable `equipo` en la URL (ver [Exportación de reportes](#exportación-de-reportes)).
@@ -119,6 +197,7 @@ Origen de datos: **ML** = MegaLinter (Prometheus/Loki, nativo) · **Archivo** = 
 
 | Sección | Gráfica | Qué muestra | Origen |
 | --- | --- | --- | --- |
+| Estado del análisis | Tabla con color | Por equipo: pendiente / analizando / listo / error y hora de la última corrida | Orquestador (Infinity) |
 | Indicadores generales | 4 tarjetas (Stat) | Equipos revisados · quality gates aprobados · errores bloqueantes · secretos encontrados | ML |
 | Calificación por equipo | Tabla con celda de color A–E | Equipo, nota, puntaje 0–100, errores bloqueantes y no bloqueantes | ML |
 | Puntaje comparado | Barras horizontales ordenadas | Puntaje de salud por equipo, umbrales en 90/80/65/50 | ML |
