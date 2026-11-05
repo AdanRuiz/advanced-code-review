@@ -1,0 +1,39 @@
+# Orígenes de datos de Grafana (PB-17, SPEC.md "Dashboard local" > "Componentes" y "Navegación").
+#
+# - Infinity lee los JSON/CSV de reports/ desde el servidor de archivos (servicio "files" de
+#   compose.yaml, red interna). Solo puede consultar ese servidor (allowedHosts): nada sale de la
+#   máquina. Usuario y contraseña llegan por variables de entorno; no se guardan aquí.
+# - Prometheus alimenta la variable "herramienta" (linters). Las métricas de MegaLinter llegan
+#   con PB-16.
+apiVersion: 1
+
+deleteDatasources:
+  - name: Infinity
+    orgId: 1
+  - name: Prometheus
+    orgId: 1
+
+datasources:
+  - name: Infinity
+    uid: acr-infinity
+    type: yesoreyeram-infinity-datasource
+    orgId: 1
+    access: proxy
+    editable: false
+    basicAuth: true
+    basicAuthUser: $ACR_FILES_USER
+    jsonData:
+      auth_method: basicAuth
+      allowedHosts:
+        - http://files:8080
+    secureJsonData:
+      basicAuthPassword: $ACR_FILES_PASSWORD
+
+  - name: Prometheus
+    uid: acr-prometheus
+    type: prometheus
+    orgId: 1
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false

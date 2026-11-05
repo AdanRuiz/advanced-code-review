@@ -1,0 +1,16 @@
+# Carga las 6 páginas del dashboard (PB-17, SPEC.md "Navegación") desde services/grafana/dashboards,
+# montada en solo lectura. Todas llevan la etiqueta advanced-code-review: el navbar las une.
+apiVersion: 1
+
+providers:
+  - name: advanced-code-review
+    orgId: 1
+    folder: Advanced Code Review
+    folderUid: acr
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 30
+    options:
+      path: /etc/grafana/dashboards
+      foldersFromFilesStructure: false

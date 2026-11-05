@@ -1,0 +1,93 @@
+{
+  "uid": "acr-seguridad",
+  "title": "4. Seguridad",
+  "description": "Código inseguro, secretos y dependencias",
+  "tags": ["advanced-code-review"],
+  "editable": false,
+  "schemaVersion": 41,
+  "version": 1,
+  "timezone": "browser",
+  "time": {"from": "now-30d", "to": "now"},
+  "refresh": "",
+  "graphTooltip": 0,
+  "links": [
+    {
+      "title": "Advanced Code Review",
+      "type": "dashboards",
+      "tags": ["advanced-code-review"],
+      "asDropdown": false,
+      "includeVars": true,
+      "keepTime": true,
+      "targetBlank": false,
+      "icon": "external link",
+      "tooltip": "",
+      "url": ""
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "equipo",
+        "label": "Equipo",
+        "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+        "query": {
+          "refId": "variable",
+          "queryType": "infinity",
+          "query": "",
+          "infinityQuery": {
+            "refId": "variable",
+            "type": "json",
+            "source": "url",
+            "parser": "backend",
+            "format": "table",
+            "url": "http://files:8080/reports/status.json",
+            "url_options": {"method": "GET", "data": ""},
+            "root_selector": "teams",
+            "columns": [{"selector": "id", "text": "id", "type": "string"}]
+          }
+        },
+        "definition": "Infinity: /reports/status.json -> teams[].id",
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "options": [],
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      },
+      {
+        "type": "query",
+        "name": "herramienta",
+        "label": "Herramienta",
+        "datasource": {"type": "prometheus", "uid": "acr-prometheus"},
+        "query": {
+          "refId": "PrometheusVariableQueryEditor-VariableQuery",
+          "qryType": 1,
+          "query": "label_values(linter)"
+        },
+        "definition": "label_values(linter)",
+        "multi": true,
+        "includeAll": true,
+        "current": {},
+        "options": [],
+        "refresh": 1,
+        "sort": 1,
+        "hide": 0
+      }
+    ]
+  },
+  "annotations": {"list": []},
+  "panels": [
+    {
+      "id": 1,
+      "type": "text",
+      "title": "4. Seguridad",
+      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "options": {
+        "mode": "markdown",
+        "content": "**Código inseguro, secretos y dependencias.** Los paneles de esta página llegan con PB-21 (SPEC.md, sección \"4. Seguridad\")."
+      }
+    }
+  ]
+}

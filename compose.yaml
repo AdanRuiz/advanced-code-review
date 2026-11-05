@@ -3,6 +3,7 @@
 # Solo localhost y sin acceso anónimo:
 # - Grafana (http://localhost:3000) y el servidor de archivos de reports/ (http://localhost:8080/reports/)
 #   publican su puerto solo en 127.0.0.1 y piden usuario y contraseña.
+# - Grafana carga el datasource Infinity y las 6 páginas desde services/grafana/ (PB-17).
 # - Loki y Prometheus no publican ningún puerto: viven en la red interna "backend" (sin salida a
 #   internet) y solo los alcanzan Grafana y el servidor de archivos.
 #
@@ -35,8 +36,17 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
       GF_NEWS_NEWS_FEED_ENABLED: "false"
+      # Plugin Infinity (PB-17), versión fija; se descarga una vez al arrancar y no se actualiza solo.
+      GF_PLUGINS_PREINSTALL_SYNC: yesoreyeram-infinity-datasource@3.3.0
+      GF_PLUGINS_PREINSTALL_AUTO_UPDATE: "false"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /etc/grafana/dashboards/resumen.json
+      # Credenciales del servidor de archivos para el datasource Infinity (provisioning).
+      ACR_FILES_USER: ${ACR_FILES_USER:-acr}
+      ACR_FILES_PASSWORD: ${ACR_FILES_PASSWORD:?define ACR_FILES_PASSWORD}
     volumes:
       - grafana-data:/var/lib/grafana
+      - ./services/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./services/grafana/dashboards:/etc/grafana/dashboards:ro
     networks:
       - frontend
       - backend
