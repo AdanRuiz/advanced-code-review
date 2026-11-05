@@ -56,6 +56,7 @@ python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (P
 python -m acr git-signals [ID]       # señales del historial de git (PB-7)
 python -m acr scc [ID]               # lenguajes, líneas y archivos con scc (PB-8)
 python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con MegaLinter (PB-9)
+python -m acr scanoss [ID]           # código open source conocido con SCANOSS, solo huellas (PB-10)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -92,6 +93,20 @@ Requiere `scc` en el `PATH` (PB-1). Se aplican las exclusiones por defecto de sc
 - Los reportes se escriben fuera del repositorio, en `reports/<id>/`: `megalinter.sarif`, `megalinter.json`, `megalinter.md`, `trivy.sarif` y `semgrep.sarif` (si esos linters corrieron) y la salida completa en `megalinter/`.
 
 Que los linters encuentren errores no es un fallo. Si el contenedor falla, no deja sus reportes o pasa del tiempo límite (`--timeout-min`, 60 por defecto; el contenedor se detiene), se conservan los reportes anteriores y se sigue con los demás equipos (código de salida 1). Requiere `podman` o `docker` y la imagen (PB-1); Semgrep y Trivy descargan sus reglas y su base de CVE, pero no envían el código.
+
+`acr scanoss` busca código copiado de proyectos open source conocidos en dos pasos, para que **solo salgan huellas** de la máquina:
+
+1. `scanoss-py fingerprint` calcula en local (sin red) la huella WFP de `repos/<id>`: por archivo, su MD5, tamaño, ruta relativa y hashes de sus líneas.
+2. Se quitan los archivos dentro de carpetas de dependencias (`node_modules`, `bower_components`, `vendor`, `third_party`, `venv`/`.venv`, `site-packages`, `Pods`, `Carthage`, `.gradle`, entre otras) y se revisa que cada línea restante sea un hash; si aparece cualquier otra cosa no se envía nada.
+3. `scanoss-py scan --wfp` envía solo esa huella filtrada a la API gratuita de SCANOSS (osskb.org); ese proceso no recibe la ruta del repositorio.
+
+Ambos pasos corren en una carpeta temporal vacía, así que un `scanoss.json` de configuración dentro del repositorio del equipo no se usa. Escribe `reports/<id>/scanoss.json` con:
+
+- `totals`: archivos enviados (`files_scanned`), archivos con coincidencia (`files_matched`) y su porcentaje (`matched_percent`), y coincidencias de archivo completo y de fragmento.
+- `excluded`: cuántos archivos de dependencias se excluyeron y en qué carpetas.
+- `matches`: por archivo, tipo (`file` o `snippet`), porcentaje, líneas, componente (proyecto), proveedor, versión, `purl`, licencias y enlaces (`url`, `file_url`).
+
+Una coincidencia indica similitud, no copia confirmada. Requiere `scanoss-py` en el `PATH` (PB-1). Si un equipo falla (por ejemplo, se alcanzó el límite de consultas gratuitas), se reporta, se conserva el `scanoss.json` anterior y se sigue con los demás (código de salida 1).
 
 `acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 
