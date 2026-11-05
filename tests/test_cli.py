@@ -16,6 +16,7 @@ COMMANDS = [
     "scanoss",
     "dolos",
     "analyze",
+    "report",
     "review-prompt",
     "review-validate",
 ]
@@ -52,7 +53,9 @@ def test_config_option_default_and_override(tmp_path):
     assert parser.parse_args(["--config", str(custom), "validate"]).config == custom
 
 
-@pytest.mark.parametrize("command", ["fetch", "git-signals", "scc", "megalinter", "scanoss", "analyze"])
+@pytest.mark.parametrize(
+    "command", ["fetch", "git-signals", "scc", "megalinter", "scanoss", "analyze", "report"]
+)
 def test_optional_team_id(command):
     parser = build_parser()
     assert parser.parse_args([command]).team_id is None

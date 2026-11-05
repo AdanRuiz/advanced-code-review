@@ -61,6 +61,7 @@ python -m acr dolos                  # similitud de código entre todos los equi
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la revisión asistida (PB-13)
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
+python -m acr report [ID]            # reporte Markdown por equipo en reports/<id>/reporte.md (PB-14)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
@@ -144,6 +145,16 @@ La revisión asistida la hace el revisor con Claude Code (suscripción propia), 
    - `reports/<id>/review.json` ([esquema](acr/schemas/review.schema.json)): `summary`; `findings` con `criterion` (`feasibility`, `quality`, `security`, `responsible_ai`, `plagiarism`), `severity` (`critical` a `info`), `file`, `line`, `title`, `description` y, opcionales, `recommendation`, `source`, `cwe` y `owasp_llm`; `ai_checklist` con `uses_ai`, `providers` y los 8 puntos de la checklist de IA responsable, y `owasp_llm` con los 5 riesgos de OWASP Top 10 para LLM de la spec (`LLM01`, `LLM02`, `LLM05`, `LLM06`, `LLM10`). Cada punto lleva `status` (`pass`, `fail`, `not_applicable`, `unknown`), `notes` y `evidence` (`file`, `line`).
    - `reports/<id>/web-plagiarism.json` ([esquema](acr/schemas/web-plagiarism.schema.json)): `keywords`, `queries` (búsqueda y fuente) y `matches` con `title`, `url`, `source` (`github`, `devpost`, `hackathon_gallery`, `product_hunt`, `tutorial`, `other`), `published` (`AAAA-MM-DD` o `null`), `before_event`, `similarity` (`idea`, `structure`, `text`) y `evidence`.
 3. `acr review-validate [<id>]` revisa ambos archivos contra su esquema JSON y además: cada punto de las checklists exactamente una vez, `id` de hallazgos sin repetir, rutas relativas dentro del repositorio, `team_id` igual a la carpeta, fechas válidas (`generated_at` con zona horaria) y que **ningún campo contenga un secreto en claro** (claves privadas, claves de AWS o Google, tokens de GitHub o Slack, API keys `sk-…`, JWT); el mensaje de error nunca repite el valor. Lista todos los errores y sale con código 1 si falta un archivo o alguno es inválido.
+
+`acr report` arma `reports/<id>/reporte.md` con la plantilla de [Entregables](SPEC.md#entregables) a partir de los resultados que ya estén en `reports/` (no vuelve a analizar):
+
+- **Resumen:** lenguajes y tamaño (`scc.json`), enlace al dashboard (`--dashboard-url`, `http://localhost:3000` por defecto) y hallazgos críticos (CVE críticas/altas con corrección, secretos y hallazgos de Semgrep de nivel error).
+- **Calidad:** errores y advertencias por linter de calidad y archivos con más hallazgos, desde `megalinter.sarif`.
+- **Seguridad:** CVE de `trivy.sarif` (el indicador principal cuenta solo críticas/altas con versión corregida), patrones inseguros de `semgrep.sarif` por CWE y OWASP Top 10, y secretos de Betterleaks **solo con tipo, archivo y línea, nunca el valor**.
+- **Plagio:** coincidencias de `scanoss.json`, pares de `reports/dolos/pairs.csv` con este equipo y señales de `git-signals.json`.
+- **Recomendaciones:** derivadas de los hallazgos anteriores.
+
+Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. La revisión asistida y la búsqueda web (`review.json`, `web-plagiarism.json`) quedan como pendientes: el reporte todavía no lee el formato que define PB-13. El texto que viene de los repositorios (rutas, reglas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 

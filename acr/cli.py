@@ -24,6 +24,7 @@ from acr.megalinter import (
     MegaLinterError,
     run_megalinter,
 )
+from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_report
 from acr.review import ReviewError, render_prompt, validate_team
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
@@ -399,6 +400,40 @@ def _review_validate(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _report(args: argparse.Namespace) -> int:
+    """PB-14: write reports/<id>/reporte.md from every result available in reports/."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr report: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    names = {team.id: team.nombre for team in config.equipos}
+    failed = 0
+    for team in teams:
+        try:
+            path = write_report(
+                team, config.evento, DEFAULT_REPORTS_DIR, names=names, dashboard_url=args.dashboard_url
+            )
+        except (ReportError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        print(f"{team.id}: reporte -> {path.as_posix()}")
+    if failed:
+        print(f"acr report: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -564,6 +599,21 @@ def build_parser() -> argparse.ArgumentParser:
         "team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)"
     )
     review_validate.set_defaults(handler=_review_validate)
+
+    report = subparsers.add_parser(
+        "report",
+        help="genera el reporte Markdown de cada equipo en reports/<id>/reporte.md",
+        description="Arma el reporte por equipo con la plantilla de la spec a partir de los "
+        "resultados que ya están en reports/. No vuelve a analizar ni muestra secretos.",
+    )
+    report.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    report.add_argument(
+        "--dashboard-url",
+        default=DEFAULT_DASHBOARD_URL,
+        metavar="URL",
+        help="enlace al dashboard local de Grafana en el reporte (por defecto: %(default)s)",
+    )
+    report.set_defaults(handler=_report)
 
     return parser
 
