@@ -13,6 +13,7 @@ from pathlib import Path
 
 from acr import __version__
 from acr.config import load_config
+from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 
 DEFAULT_CONFIG = Path("equipos.yml")
 
@@ -44,6 +45,45 @@ def _validate(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _fetch(args: argparse.Namespace) -> int:
+    """PB-6: fetch one or every team into repos/<id>; keep going if one team fails."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr fetch: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    max_bytes = args.max_zip_mb * 1024 * 1024
+    failed = 0
+    for team in teams:
+        try:
+            result = fetch_team(team, DEFAULT_REPOS_DIR, max_zip_bytes=max_bytes)
+        except FetchError as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+        else:
+            print(f"{team.id}: {result.kind} -> {result.path.as_posix()}")
+    if failed:
+        print(f"acr fetch: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
+def _positive_int(value: str) -> int:
+    number = int(value)
+    if number <= 0:
+        raise argparse.ArgumentTypeError("debe ser un entero positivo")
+    return number
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="acr",
@@ -73,7 +113,14 @@ def build_parser() -> argparse.ArgumentParser:
         description="Obtiene los repositorios de los equipos en solo lectura. Nunca los ejecuta.",
     )
     fetch.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
-    fetch.set_defaults(handler=_not_implemented("PB-6"))
+    fetch.add_argument(
+        "--max-zip-mb",
+        type=_positive_int,
+        default=DEFAULT_MAX_ZIP_BYTES // (1024 * 1024),
+        metavar="MB",
+        help="tamaño máximo de un ZIP descomprimido (por defecto: %(default)s MB)",
+    )
+    fetch.set_defaults(handler=_fetch)
 
     analyze = subparsers.add_parser(
         "analyze",
