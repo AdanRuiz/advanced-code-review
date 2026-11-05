@@ -53,6 +53,7 @@ Requiere Python 3.12 y las dependencias de `requirements-dev.txt`.
 python -m acr --help                 # lista los comandos
 python -m acr validate               # valida equipos.yml (PB-5)
 python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (PB-6)
+python -m acr git-signals [ID]       # señales del historial de git (PB-7)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -66,6 +67,14 @@ python -m acr --config otro.yml ...  # usa otro archivo de entrada
 - **ZIP** (`.zip`): se descomprime rechazando rutas peligrosas (*zip slip*) y enlaces simbólicos, con un límite de tamaño descomprimido (`--max-zip-mb`, 1024 MB por defecto) y de 100 000 entradas.
 
 `rama` y `commit` solo aplican a URL git. Cada equipo se obtiene en una carpeta temporal y reemplaza a `repos/<id>` solo si todo salió bien; los archivos quedan en solo lectura. Si un equipo falla, se reporta y se sigue con los demás (código de salida 1). Las rutas relativas se toman desde el directorio actual. El código obtenido nunca se ejecuta.
+
+`acr git-signals` lee el historial de `repos/<id>` (solo `git rev-parse` y `git log` sobre la versión obtenida, sin ejecutar el código) y escribe `reports/<id>/git-signals.json` con:
+
+- `first_commit` y `last_commit` (hash, fecha de autor y fecha de commit), `commit_count` y `single_commit` (un solo commit con todo el código).
+- `outside_event`: cuántos commits quedan antes de `evento.inicio` (`before_start`) o después de `evento.fin` (`after_end`) y la lista de esos commits. Un commit cuenta si su fecha de autor **o** su fecha de commit cae fuera; así se detecta código previo aunque se haya rebasado durante el evento.
+- `has_git: false` si la carpeta o el ZIP no traen una carpeta `.git` propia (un archivo `.git` que apunta a otra ruta no se sigue).
+
+Si `inicio`/`fin` no tienen zona horaria se toman en la hora local del revisor. No guarda mensajes, nombres ni correos de los autores. Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1).
 
 `acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 

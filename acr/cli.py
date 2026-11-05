@@ -14,6 +14,7 @@ from pathlib import Path
 from acr import __version__
 from acr.config import load_config
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
+from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
 
 DEFAULT_CONFIG = Path("equipos.yml")
 
@@ -77,6 +78,45 @@ def _fetch(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _git_signals(args: argparse.Namespace) -> int:
+    """PB-7: write reports/<id>/git-signals.json for one or every fetched team."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr git-signals: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    failed = 0
+    for team in teams:
+        try:
+            path, signals = write_git_signals(team.id, config.evento, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+        except (GitSignalsError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        if not signals["has_git"]:
+            summary = "sin historial de git"
+        else:
+            outside = signals["outside_event"]
+            summary = (
+                f"{signals['commit_count']} commit(s), {outside['before_start']} antes del inicio, "
+                f"{outside['after_end']} después del cierre"
+            )
+        print(f"{team.id}: {summary} -> {path.as_posix()}")
+    if failed:
+        print(f"acr git-signals: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -121,6 +161,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="tamaño máximo de un ZIP descomprimido (por defecto: %(default)s MB)",
     )
     fetch.set_defaults(handler=_fetch)
+
+    git_signals = subparsers.add_parser(
+        "git-signals",
+        help="resume el historial de git de cada equipo en reports/<id>/git-signals.json",
+        description="Lee el historial de repos/<id> (sin ejecutar el código) y marca los commits "
+        "fuera de evento.inicio/fin.",
+    )
+    git_signals.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    git_signals.set_defaults(handler=_git_signals)
 
     analyze = subparsers.add_parser(
         "analyze",
