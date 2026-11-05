@@ -7,6 +7,8 @@ Runs the MegaLinter container (v10 or later) once per team with ``podman`` (or `
 - the project's ``.mega-linter.yml`` is mounted read-only and forced with ``MEGALINTER_CONFIG``,
   so a configuration file inside the team's repository is ignored.
 - reports are written outside the repository, to a staging folder under ``reports/<id>/``.
+- nothing else from the host is mounted, and the container runs without capabilities, without
+  privilege escalation and with process and memory limits (PB-40).
 
 When MegaLinter produced its reports, ``reports/<id>/`` gets ``megalinter.sarif``,
 ``megalinter.json`` and ``megalinter.md``, plus ``trivy.sarif`` and ``semgrep.sarif`` (SPEC.md
@@ -31,6 +33,19 @@ DEFAULT_IMAGE = "docker.io/oxsecurity/megalinter:v10"
 DEFAULT_CONFIG_FILE = Path(__file__).resolve().parent.parent / ".mega-linter.yml"
 DEFAULT_TIMEOUT_SECONDS = 60 * 60
 ENGINES = ("podman", "docker")
+
+# Container hardening (PB-40, SPEC.md "Entorno, seguridad y privacidad"): no Linux capabilities,
+# no privilege escalation (setuid binaries) and bounded processes and memory, so a linter that
+# loads executable configuration from the team's repository has as little reach as possible.
+MEMORY_LIMIT = "8g"
+PIDS_LIMIT = 4096
+HARDENING_OPTIONS = (
+    "--cap-drop=ALL",
+    "--security-opt=no-new-privileges",
+    f"--pids-limit={PIDS_LIMIT}",
+    f"--memory={MEMORY_LIMIT}",
+    f"--memory-swap={MEMORY_LIMIT}",
+)
 
 # Paths inside the container.
 WORKSPACE = "/tmp/lint"
@@ -85,13 +100,18 @@ def _bind(source: Path, target: str, read_only: bool) -> str:
 def build_command(
     engine: str, image: str, team_id: str, repo: Path, output: Path, config_file: Path
 ) -> list[str]:
-    """Container command line: repository and configuration read-only, reports outside the repo."""
+    """Hardened container command line.
+
+    The only host paths mounted are the repository and the configuration (read-only) and the
+    reports folder (outside the repository).
+    """
     return [
         engine,
         "run",
         "--rm",
         "--name",
         container_name(team_id),
+        *HARDENING_OPTIONS,
         "--mount",
         _bind(repo, WORKSPACE, read_only=True),
         "--mount",

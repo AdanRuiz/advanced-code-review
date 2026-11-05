@@ -158,6 +158,39 @@ def test_command_mounts_repo_and_config_read_only_and_reports_outside(tmp_path):
     assert not REPORTS_TARGET.startswith(WORKSPACE)
 
 
+@pytest.mark.parametrize("engine", ["podman", "docker"])
+def test_command_is_hardened(tmp_path, engine):
+    repo = make_repo(tmp_path)
+    out = tmp_path / "reports" / "equipo-01" / ".megalinter.tmp"
+    cmd = build_command(engine, "img:v10", "equipo-01", repo, out, DEFAULT_CONFIG_FILE)
+    options = cmd[: cmd.index("img:v10")]  # everything after the image goes to the container
+    assert "--cap-drop=ALL" in options
+    assert "--security-opt=no-new-privileges" in options
+    assert f"--pids-limit={megalinter.PIDS_LIMIT}" in options
+    assert f"--memory={megalinter.MEMORY_LIMIT}" in options
+    assert f"--memory-swap={megalinter.MEMORY_LIMIT}" in options
+    assert 0 < megalinter.PIDS_LIMIT and megalinter.MEMORY_LIMIT[:-1].isdigit()
+    # Nothing from the host is mounted except the repository, the configuration and the reports.
+    assert set(mounts(cmd)) == {WORKSPACE, CONFIG_TARGET, REPORTS_TARGET}
+    assert options.count("--mount") == 3
+    for option in options:
+        name = option.split("=", 1)[0]
+        assert name not in {"-v", "--volume", "--volumes-from", "--privileged", "--cap-add",
+                            "--device", "--pid", "--ipc", "--userns", "--env-file"}, option
+        assert not option.startswith(("--network=host", "--net=host", "--security-opt=seccomp=unconfined"))
+    # The options come before the image, so the engine applies them.
+    assert cmd.index("--cap-drop=ALL") < cmd.index("img:v10")
+
+
+def test_run_uses_hardened_command(tmp_path):
+    make_repo(tmp_path)
+    fake = FakeMegaLinter()
+    run(tmp_path, fake)
+    (cmd,) = fake.calls
+    for option in megalinter.HARDENING_OPTIONS:
+        assert option in cmd
+
+
 def test_command_rejects_paths_that_break_mount_syntax(tmp_path):
     repo = tmp_path / "a,b"
     repo.mkdir()
