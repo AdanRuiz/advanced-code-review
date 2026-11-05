@@ -1,0 +1,10 @@
+# Prometheus local (PB-15). Sin puerto publicado: solo lo alcanza la red interna "backend" de
+# compose.yaml. Las métricas de MegaLinter llegan con PB-16.
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

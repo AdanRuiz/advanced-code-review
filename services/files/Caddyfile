@@ -1,0 +1,38 @@
+# Servidor de archivos de reports/ (PB-15, SPEC.md "Dashboard local" y "Exportación de reportes").
+# Solo lectura, con usuario y contraseña, sin listado de carpetas. Lo usan Infinity (desde Grafana,
+# por la red interna) y los botones de exportación (desde el navegador, en 127.0.0.1:8080).
+{
+	admin off
+	auto_https off
+	persist_config off
+}
+
+:8080 {
+	header {
+		-Server
+		X-Content-Type-Options nosniff
+		Content-Security-Policy "default-src 'none'; sandbox"
+		Referrer-Policy no-referrer
+		Cache-Control no-store
+	}
+
+	basic_auth {
+		{$ACR_FILES_USER} {$ACR_FILES_HASH}
+	}
+
+	handle /reports/* {
+		@write not method GET HEAD
+		respond @write 405
+
+		# Archivos y carpetas ocultos (por ejemplo los candados de reports/.locks/) no se sirven.
+		@hidden path_regexp /\.
+		respond @hidden 404
+
+		root * /srv
+		file_server
+	}
+
+	handle {
+		respond 404
+	}
+}

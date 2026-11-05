@@ -1,0 +1,4 @@
+# Archivos que leen los contenedores de compose.yaml (Linux): siempre con fin de línea LF.
+*.sh text eol=lf
+services/** text eol=lf
+compose.yaml text eol=lf

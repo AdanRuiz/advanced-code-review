@@ -159,6 +159,32 @@ La revisión asistida la hace el revisor con Claude Code (suscripción propia), 
 
 Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. La revisión asistida y la búsqueda web (`review.json`, `web-plagiarism.json`) quedan como pendientes: el reporte todavía no lee el formato que define PB-13. El texto que viene de los repositorios (rutas, reglas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
 
+### Dashboard local (servicios)
+
+[`compose.yaml`](compose.yaml) levanta los servicios del dashboard (PB-15) con `podman compose up -d` (o `docker compose up -d`) desde la raíz del proyecto:
+
+| Servicio | Imagen | Acceso |
+| --- | --- | --- |
+| Grafana | `grafana/grafana-oss` | `http://localhost:3000`, con usuario y contraseña |
+| Servidor de archivos | `caddy` | `http://localhost:8080/reports/...`, `reports/` en solo lectura, con usuario y contraseña |
+| Loki | `grafana/loki` | Sin puerto publicado: solo desde la red interna |
+| Prometheus | `prom/prometheus` | Sin puerto publicado: solo desde la red interna |
+
+Las contraseñas no tienen valor por defecto y no se guardan en el repositorio: si falta alguna, `compose` no arranca. Se definen como variables de entorno o en un archivo `.env` junto a `compose.yaml` (está en `.gitignore`):
+
+```sh
+ACR_GRAFANA_ADMIN_PASSWORD=...   # cuenta de administración de Grafana (usuario: ACR_GRAFANA_ADMIN_USER, admin por defecto)
+ACR_FILES_PASSWORD=...           # servidor de archivos (usuario: ACR_FILES_USER, acr por defecto)
+```
+
+- **Solo `localhost`:** Grafana y el servidor de archivos publican su puerto solo en `127.0.0.1`. Loki y Prometheus viven en una red interna sin salida a internet y sin puertos hacia el anfitrión; solo los alcanzan Grafana y el servidor de archivos.
+- **Sin acceso anónimo:** Grafana con acceso anónimo, registro de usuarios, dashboards públicos y autenticación básica de la API desactivados. El servidor de archivos pide usuario y contraseña (se guarda solo su hash en memoria), solo acepta `GET`/`HEAD`, no lista carpetas, no sirve archivos ocultos (como `reports/.locks/`) y responde con `Content-Security-Policy: sandbox` para que un HTML de un reporte no ejecute nada.
+- **Nada sale de la máquina:** sin instantáneas externas de Grafana, sin estadísticas de uso, avisos de versión ni noticias de Grafana, y sin estadísticas de uso de Loki.
+- Todos los contenedores corren sin capacidades (`cap_drop: ALL`) y con `no-new-privileges`; los datos de Grafana, Loki y Prometheus quedan en volúmenes con nombre.
+- Crea `reports/` (o corre `acr analyze`) antes de levantar los servicios para que la carpeta montada sea la del revisor.
+
+Aún no hay datos ni dashboards: el envío de MegaLinter a Loki/Prometheus llega con PB-16 y el datasource Infinity, el navbar y las variables con PB-17.
+
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
 ## Privacidad
