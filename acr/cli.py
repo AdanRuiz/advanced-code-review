@@ -15,6 +15,13 @@ from acr import __version__
 from acr.config import load_config
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
+from acr.megalinter import (
+    DEFAULT_IMAGE,
+    DEFAULT_TIMEOUT_SECONDS,
+    ENGINES,
+    MegaLinterError,
+    run_megalinter,
+)
 from acr.scc import SccError, write_scc
 
 DEFAULT_CONFIG = Path("equipos.yml")
@@ -154,6 +161,48 @@ def _scc(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _megalinter(args: argparse.Namespace) -> int:
+    """PB-9: run MegaLinter on repos/<id> (read-only) and write its reports to reports/<id>/."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr megalinter: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    failed = 0
+    for team in teams:
+        try:
+            result = run_megalinter(
+                team.id,
+                DEFAULT_REPOS_DIR,
+                DEFAULT_REPORTS_DIR,
+                engine=args.engine,
+                image=args.image,
+                timeout=args.timeout_min * 60,
+            )
+        except (MegaLinterError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        outcome = "con errores de linters" if result.returncode else "sin errores de linters"
+        names = ", ".join(path.name for path in result.files)
+        print(f"{team.id}: MegaLinter {outcome} -> {names} en {(DEFAULT_REPORTS_DIR / team.id).as_posix()}")
+        if result.missing:
+            print(f"{team.id}: aviso: no se generó {', '.join(result.missing)}", file=sys.stderr)
+    if failed:
+        print(f"acr megalinter: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -215,6 +264,34 @@ def build_parser() -> argparse.ArgumentParser:
     )
     scc.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
     scc.set_defaults(handler=_scc)
+
+    megalinter = subparsers.add_parser(
+        "megalinter",
+        help="corre MegaLinter (calidad, Semgrep, Betterleaks, Trivy) y deja SARIF, JSON y Markdown "
+        "en reports/<id>/",
+        description="Corre el contenedor de MegaLinter con repos/<id> en solo lectura y la "
+        "configuración .mega-linter.yml de este proyecto. Nunca ejecuta el código del equipo.",
+    )
+    megalinter.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    megalinter.add_argument(
+        "--engine",
+        choices=ENGINES,
+        default=None,
+        help="motor de contenedores (por defecto: podman si está instalado, si no docker)",
+    )
+    megalinter.add_argument(
+        "--image",
+        default=DEFAULT_IMAGE,
+        help="imagen de MegaLinter, v10 o superior (por defecto: %(default)s)",
+    )
+    megalinter.add_argument(
+        "--timeout-min",
+        type=_positive_int,
+        default=DEFAULT_TIMEOUT_SECONDS // 60,
+        metavar="MIN",
+        help="tiempo máximo por equipo (por defecto: %(default)s minutos)",
+    )
+    megalinter.set_defaults(handler=_megalinter)
 
     analyze = subparsers.add_parser(
         "analyze",
