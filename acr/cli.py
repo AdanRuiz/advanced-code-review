@@ -15,6 +15,7 @@ from acr import __version__
 from acr.config import load_config
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
+from acr.scc import SccError, write_scc
 
 DEFAULT_CONFIG = Path("equipos.yml")
 
@@ -117,6 +118,42 @@ def _git_signals(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _scc(args: argparse.Namespace) -> int:
+    """PB-8: write reports/<id>/scc.json (languages, lines, files) for one or every team."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr scc: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    failed = 0
+    for team in teams:
+        try:
+            path, report = write_scc(team.id, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+        except (SccError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        totals = report["totals"]
+        main_language = report["languages"][0]["name"] if report["languages"] else "ninguno"
+        print(
+            f"{team.id}: {totals['languages']} lenguaje(s) (principal: {main_language}), "
+            f"{totals['files']} archivo(s), {totals['code']} línea(s) de código -> {path.as_posix()}"
+        )
+    if failed:
+        print(f"acr scc: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -170,6 +207,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     git_signals.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
     git_signals.set_defaults(handler=_git_signals)
+
+    scc = subparsers.add_parser(
+        "scc",
+        help="cuenta lenguajes, líneas y archivos de cada equipo en reports/<id>/scc.json",
+        description="Corre scc sobre repos/<id> (solo lee los archivos, no ejecuta el código).",
+    )
+    scc.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    scc.set_defaults(handler=_scc)
 
     analyze = subparsers.add_parser(
         "analyze",

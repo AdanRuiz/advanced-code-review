@@ -54,6 +54,7 @@ python -m acr --help                 # lista los comandos
 python -m acr validate               # valida equipos.yml (PB-5)
 python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (PB-6)
 python -m acr git-signals [ID]       # señales del historial de git (PB-7)
+python -m acr scc [ID]               # lenguajes, líneas y archivos con scc (PB-8)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -75,6 +76,13 @@ python -m acr --config otro.yml ...  # usa otro archivo de entrada
 - `has_git: false` si la carpeta o el ZIP no traen una carpeta `.git` propia (un archivo `.git` que apunta a otra ruta no se sigue).
 
 Si `inicio`/`fin` no tienen zona horaria se toman en la hora local del revisor. No guarda mensajes, nombres ni correos de los autores. Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1).
+
+`acr scc` corre `scc --format json` sobre `repos/<id>` (solo cuenta líneas, no ejecuta el código) y escribe `reports/<id>/scc.json` con:
+
+- `languages`: un elemento por lenguaje, del que tiene más líneas de código al que tiene menos, con `name`, `files`, `lines`, `code`, `comment`, `blank`, `bytes` y `complexity`.
+- `totals`: número de lenguajes y la suma de los mismos campos para todo el repositorio.
+
+Requiere `scc` en el `PATH` (PB-1). Se aplican las exclusiones por defecto de scc (`.git` y lo que indique `.gitignore`). Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1); un `scc.json` anterior solo se reemplaza si scc terminó bien.
 
 `acr analyze` solo está registrado: responde "todavía no implementado" (código de salida 3) hasta que se complete su ítem del backlog.
 

@@ -7,7 +7,7 @@ import pytest
 from acr import __version__
 from acr.cli import DEFAULT_CONFIG, EXIT_NOT_IMPLEMENTED, EXIT_OK, build_parser, main
 
-COMMANDS = ["validate", "fetch", "git-signals", "analyze"]
+COMMANDS = ["validate", "fetch", "git-signals", "scc", "analyze"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -47,7 +47,7 @@ def test_config_option_default_and_override(tmp_path):
     assert parser.parse_args(["--config", str(custom), "validate"]).config == custom
 
 
-@pytest.mark.parametrize("command", ["fetch", "git-signals", "analyze"])
+@pytest.mark.parametrize("command", ["fetch", "git-signals", "scc", "analyze"])
 def test_optional_team_id(command):
     parser = build_parser()
     assert parser.parse_args([command]).team_id is None
