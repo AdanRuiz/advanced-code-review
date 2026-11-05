@@ -1,17 +1,18 @@
 """Command-line interface for Advanced Code Review (PB-4, SPEC.md "Arquitectura y flujo").
 
-Each subcommand maps to a step of the pipeline. The commands are registered here so that
-``python -m acr --help`` lists them; their behaviour is implemented by later backlog items.
+Each subcommand maps to a step of the pipeline; ``acr analyze`` runs all of them in order.
 """
 
 from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from acr import __version__
+from acr.analyze import STATUS_FILE, default_dolos, default_steps, run_analysis
+from acr.analyze import Options as AnalyzeOptions
 from acr.config import load_config
 from acr.dolos import DolosError, write_dolos
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
@@ -31,17 +32,6 @@ DEFAULT_CONFIG = Path("equipos.yml")
 # Exit codes.
 EXIT_OK = 0
 EXIT_ERROR = 1
-EXIT_NOT_IMPLEMENTED = 3
-
-Handler = Callable[[argparse.Namespace], int]
-
-
-def _not_implemented(item: str) -> Handler:
-    def handler(args: argparse.Namespace) -> int:
-        print(f"acr {args.command}: todavía no implementado ({item}).", file=sys.stderr)
-        return EXIT_NOT_IMPLEMENTED
-
-    return handler
 
 
 def _validate(args: argparse.Namespace) -> int:
@@ -290,6 +280,49 @@ def _dolos(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def _analyze(args: argparse.Namespace) -> int:
+    """PB-12: run every step in order for one or every team; write reports/status.json."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr analyze: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+
+    options = AnalyzeOptions(
+        repos_dir=DEFAULT_REPOS_DIR,
+        reports_dir=DEFAULT_REPORTS_DIR,
+        max_zip_bytes=args.max_zip_mb * 1024 * 1024,
+        engine=args.engine,
+        image=args.image,
+        megalinter_timeout=args.timeout_min * 60,
+    )
+    result = run_analysis(
+        config,
+        teams,
+        steps=default_steps(config, options),
+        dolos=default_dolos(options),
+        repos_dir=options.repos_dir,
+        reports_dir=options.reports_dir,
+        warn=lambda message: print(message, file=sys.stderr),
+    )
+    status_path = (DEFAULT_REPORTS_DIR / STATUS_FILE).as_posix()
+    print(
+        f"acr analyze: {len(result.analyzed)} equipo(s) listo(s), {len(result.failed)} con error, "
+        f"{len(result.busy)} ya en curso -> {status_path}"
+    )
+    if result.dolos == "error":
+        print("acr analyze: Dolos falló; se conservan sus reportes anteriores", file=sys.stderr)
+    return EXIT_OK if result.ok else EXIT_ERROR
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -405,7 +438,32 @@ def build_parser() -> argparse.ArgumentParser:
         description="Corre los pasos del análisis en orden y deja los resultados en reports/.",
     )
     analyze.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
-    analyze.set_defaults(handler=_not_implemented("PB-12"))
+    analyze.add_argument(
+        "--max-zip-mb",
+        type=_positive_int,
+        default=DEFAULT_MAX_ZIP_BYTES // (1024 * 1024),
+        metavar="MB",
+        help="tamaño máximo de un ZIP descomprimido (por defecto: %(default)s MB)",
+    )
+    analyze.add_argument(
+        "--engine",
+        choices=ENGINES,
+        default=None,
+        help="motor de contenedores para MegaLinter (por defecto: podman si está instalado, si no docker)",
+    )
+    analyze.add_argument(
+        "--image",
+        default=DEFAULT_IMAGE,
+        help="imagen de MegaLinter, v10 o superior (por defecto: %(default)s)",
+    )
+    analyze.add_argument(
+        "--timeout-min",
+        type=_positive_int,
+        default=DEFAULT_TIMEOUT_SECONDS // 60,
+        metavar="MIN",
+        help="tiempo máximo de MegaLinter por equipo (por defecto: %(default)s minutos)",
+    )
+    analyze.set_defaults(handler=_analyze)
 
     return parser
 

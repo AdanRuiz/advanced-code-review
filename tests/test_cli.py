@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from acr import __version__
-from acr.cli import DEFAULT_CONFIG, EXIT_NOT_IMPLEMENTED, EXIT_OK, build_parser, main
+from acr.cli import DEFAULT_CONFIG, EXIT_OK, build_parser, main
 
 COMMANDS = ["validate", "fetch", "git-signals", "scc", "megalinter", "scanoss", "dolos", "analyze"]
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -32,12 +32,6 @@ def test_version(capsys):
         main(["--version"])
     assert exc.value.code == 0
     assert __version__ in capsys.readouterr().out
-
-
-@pytest.mark.parametrize("command", ["analyze"])
-def test_commands_not_implemented_yet(command, capsys):
-    assert main([command]) == EXIT_NOT_IMPLEMENTED
-    assert "no implementado" in capsys.readouterr().err
 
 
 def test_config_option_default_and_override(tmp_path):
