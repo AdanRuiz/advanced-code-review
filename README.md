@@ -25,7 +25,7 @@ Todo el stack es open source y gratuito.
 | [MegaLinter](https://megalinter.io/) | Calidad de código, Semgrep, Betterleaks (secretos) y Trivy (dependencias) en una sola pasada |
 | [SCANOSS](https://osskb.org/) | Plagio de código open source conocido (envía solo huellas, no el código) |
 | [Dolos](https://dolos.ugent.be/) | Similitud de código entre equipos |
-| Grafana + Loki + Prometheus | Dashboard compartido de calidad y seguridad |
+| Grafana + Loki + Prometheus + Infinity | Dashboard compartido de 6 páginas con navbar: resumen, equipo, calidad, seguridad, plagio y calificación |
 | Claude Code | Revisión asistida y búsqueda de plagio de ideas en la web |
 
 Claude Code requiere una suscripción propia.
