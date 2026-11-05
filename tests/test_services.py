@@ -98,7 +98,7 @@ def test_config_files_exist(compose):
         for volume in service.get("volumes", []):
             source = volume.split(":", 1)[0]
             if source.startswith("./") and source != "./reports":
-                assert (ROOT / source).is_file(), source
+                assert (ROOT / source).exists(), source
 
 
 def test_caddyfile_requires_auth_and_does_not_list():

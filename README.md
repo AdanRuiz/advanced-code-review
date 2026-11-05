@@ -183,7 +183,15 @@ ACR_FILES_PASSWORD=...           # servidor de archivos (usuario: ACR_FILES_USER
 - Todos los contenedores corren sin capacidades (`cap_drop: ALL`) y con `no-new-privileges`; los datos de Grafana, Loki y Prometheus quedan en volúmenes con nombre.
 - Crea `reports/` (o corre `acr analyze`) antes de levantar los servicios para que la carpeta montada sea la del revisor.
 
-Aún no hay datos ni dashboards: el envío de MegaLinter a Loki/Prometheus llega con PB-16 y el datasource Infinity, el navbar y las variables con PB-17.
+Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](services/grafana/) montada en solo lectura:
+
+- **Plugin Infinity** con versión fija (`GF_PLUGINS_PREINSTALL_SYNC`), sin actualización automática. Se descarga una vez al arrancar, como las imágenes.
+- **Datasource Infinity** (`acr-infinity`): lee los JSON/CSV de `reports/` desde el servidor de archivos por la red interna (`http://files:8080`), con el mismo usuario y contraseña (`ACR_FILES_USER`, `ACR_FILES_PASSWORD`, que Grafana recibe por variable de entorno). Solo puede consultar ese servidor (`allowedHosts`). **Datasource Prometheus** (`acr-prometheus`) apunta al Prometheus interno.
+- **6 páginas** en la carpeta *Advanced Code Review*: 1. Resumen (página de inicio), 2. Equipo, 3. Calidad, 4. Seguridad, 5. Plagio y 6. Calificación. Todas llevan la etiqueta `advanced-code-review` y un *dashboard link* por esa etiqueta, que las muestra como botones arriba (navbar) y conserva las variables y el rango de tiempo al cambiar de página. No se editan desde la interfaz: se cambian en los JSON.
+- **Variable `equipo`** en todas las páginas: Todos / uno / varios, con los `id` de `reports/status.json` (lo escribe `acr analyze`; sin ese archivo la lista queda vacía).
+- **Variable `herramienta`** solo en Calidad y Seguridad: linters, con `label_values(linter)` de Prometheus.
+
+Las páginas aún no tienen paneles (llegan con PB-18 a PB-22) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
