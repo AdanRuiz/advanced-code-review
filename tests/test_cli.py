@@ -16,6 +16,7 @@ COMMANDS = [
     "scanoss",
     "dolos",
     "analyze",
+    "security",
     "report",
     "review-prompt",
     "review-validate",

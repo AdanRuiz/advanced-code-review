@@ -133,6 +133,7 @@ Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `P
 
 1. Por equipo: `fetch`, `git-signals`, `scc`, `megalinter` y `scanoss` (mismas opciones `--max-zip-mb`, `--engine`, `--image` y `--timeout-min`). Si falla la obtención, ese equipo se detiene ahí; si falla un paso posterior, se registra y se siguen los demás pasos y equipos.
 2. Al final, `dolos` una sola vez sobre todos los equipos obtenidos (también los que no se volvieron a analizar), para que la matriz quede al día. Con menos de dos equipos obtenidos se omite.
+3. Después, `security` sobre todos los equipos de `equipos.yml` (ver abajo).
 
 El avance queda en `reports/status.json`, que se reescribe en cada paso:
 
@@ -140,6 +141,15 @@ El avance queda en `reports/status.json`, que se reescribe en cada paso:
 - `dolos`: estado, equipos comparados y hora de la última corrida de Dolos.
 
 Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sistema operativo en `reports/.locks/`; si ya hay un análisis en curso para un equipo, no se lanza otro y se avisa. Si el proceso muere, el candado se libera solo y el equipo que quedó "analizando" pasa a `error` ("análisis interrumpido") en la siguiente escritura. Sale con código 1 si algún equipo terminó con error, estaba ocupado o Dolos falló. La revisión asistida con Claude Code y las exportaciones (PB-13, PB-14, PB-23) aún no forman parte del pipeline.
+
+`acr security` (también al final de `acr analyze`) resume en `reports/security.json` los datos de la página Seguridad del dashboard para todos los equipos de `equipos.yml`, a partir de los SARIF que ya están en `reports/<id>/` (no vuelve a analizar). Infinity lee una URL por consulta y no puede recorrer los equipos elegidos en la variable `equipo`, por eso los paneles leen este único archivo y filtran sus filas por equipo:
+
+- `teams`: por equipo, CVE por severidad CVSS (crítica, alta, media, baja, desconocida), **CVE críticas/altas con versión corregida** (indicador principal), total de CVE, hallazgos de Semgrep y secretos, y si había `trivy.sarif`, `semgrep.sarif` y `megalinter.sarif`.
+- `vulnerabilities` (`trivy.sarif`): CVE, paquete, versión instalada y corregida, CVSS, severidad y si cuenta en el indicador principal; una fila por CVE, paquete y versión.
+- `weaknesses` y `insecure_patterns` (`semgrep.sarif`): hallazgos contados por CWE y por categoría OWASP Top 10 (`sin clasificar` si la regla no trae etiqueta), y cada hallazgo con regla, CWE, OWASP, severidad, archivo y línea.
+- `secrets` (Betterleaks en `megalinter.sarif`): **solo tipo, archivo y línea**; ni el valor ni el mensaje del hallazgo se copian.
+
+Un SARIF que falta o no se puede leer deja ese equipo en cero y se avisa. Usa el mismo análisis de SARIF que `acr report`, así que el reporte y el dashboard cuentan lo mismo.
 
 La revisión asistida la hace el revisor con Claude Code (suscripción propia), equipo por equipo, después de `acr analyze`:
 
@@ -191,7 +201,17 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 - **Variable `equipo`** en todas las páginas: Todos / uno / varios, con los `id` de `reports/status.json` (lo escribe `acr analyze`; sin ese archivo la lista queda vacía).
 - **Variable `herramienta`** solo en Calidad y Seguridad: linters, con `label_values(linter)` de Prometheus.
 
-Las páginas aún no tienen paneles (llegan con PB-18 a PB-22) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía.
+**4. Seguridad** (PB-21) lee `reports/security.json` con Infinity, filtrado por la variable `equipo`:
+
+- 4 tarjetas verde (0) / rojo (1 o más): **CVE críticas/altas con corrección** (indicador principal, arriba a la izquierda), hallazgos de Semgrep, secretos de Betterleaks y total de CVE.
+- **CVE por severidad:** barras apiladas por equipo (crítica, alta, media, baja).
+- **Dependencias vulnerables:** tabla ordenada por CVSS con CVE, paquete, versiones instalada y corregida, CVSS y severidad.
+- **Código inseguro por categoría:** barras por equipo agrupadas por CWE y por OWASP Top 10.
+- **Patrones inseguros:** regla, CWE, OWASP, severidad, archivo y línea.
+- **Secretos expuestos:** equipo, tipo, archivo y línea, sin el valor.
+- Clic en un equipo en las tablas o en las barras de CVE abre la página Equipo filtrada.
+
+Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20 y PB-22) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
