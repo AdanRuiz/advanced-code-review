@@ -4,8 +4,8 @@
 
 evento:
   nombre: "Hackathon 2026"
-  inicio: 2026-11-01T09:00:00-06:00   # detecta commits previos al evento
-  fin:    2026-11-03T18:00:00-06:00   # detecta commits posteriores al cierre
+  inicio: 2026-11-01T09:00:00-06:00   # inicio del sprint: detecta commits previos
+  fin:    2026-11-03T18:00:00-06:00   # cierre: fija la versión revisada y detecta commits posteriores
 
 equipos:
   # Repositorio git (URL)
@@ -16,6 +16,11 @@ equipos:
     repo: https://github.com/org/proyecto-alfa
     rama: main                         # opcional
     commit: a1b2c3d                    # opcional: congela la versión entregada
+    integrantes:                       # opcional: evidencia de colaboración
+      - nombre: "Ana López"
+        github: analopez
+    presentacion: https://docs.google.com/presentation/d/ejemplo   # opcional
+    prompts_ia: C:/entregas/alfa-prompts.pdf                       # opcional
 
   # Carpeta local
   - id: equipo-02

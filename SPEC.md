@@ -2,26 +2,62 @@
 
 Framework de revisión estática de repositorios para hackathons y concursos de programación.
 
-Versión: 2026-11-04
+Versión: 2026-11-06
 
 ## Propósito y alcance
 
-El framework revisa de forma estática los repositorios de los equipos participantes con herramientas open source y sin costo adicional, sin importar el lenguaje en que estén programados.
+El framework revisa de forma estática los repositorios de los equipos participantes con herramientas open source y sin costo adicional, sin importar el lenguaje en que estén programados. Su objetivo es reunir evidencia para el **checklist oficial de code review** del evento (ver [Checklist oficial](#checklist-oficial-de-code-review)).
 
-**Criterios que cubre:**
+**Criterios evaluados (checklist oficial):**
 
-| Criterio | Qué se evalúa |
+| Sección | Qué se evalúa |
 | --- | --- |
-| Factibilidad técnica | Lenguajes, tamaño, arquitectura, dependencias vulnerables o abandonadas |
-| Calidad del código | Hallazgos de linters, mantenibilidad |
-| Seguridad | Código inseguro (CWE / OWASP Top 10), dependencias con CVE, secretos expuestos |
-| Integración responsable de IA | Secretos expuestos, datos enviados al proveedor de IA, filtros, manejo de errores, supervisión humana |
-| Plagio | Código copiado de proyectos públicos, similitud entre equipos, ideas o proyectos ya existentes en la web |
+| 1. Desarrollo auténtico | El historial refleja trabajo iterativo y colaborativo durante el reto |
+| 2. Código original y con propósito | Estructura, decisiones intencionales, sin reutilización sin explicar, entendido por el equipo |
+| 3. Documentación y atribución | README claro, instalación y dependencias, declaración de recursos externos y asistencia de IA |
+| 4. Coherencia con la demo, el usuario y seguridad básica | El código coincide con lo demostrado, considera al usuario y no expone secretos ni datos privados |
+
+**Evidencia técnica de apoyo:** las herramientas agrupan sus hallazgos en estas categorías. Alimentan los puntos del checklist; lo que el checklist no pide se reporta en un **anexo técnico** que no puntúa.
+
+| Categoría | Qué se analiza | Uso |
+| --- | --- | --- |
+| Factibilidad técnica | Lenguajes, tamaño, arquitectura, dependencias vulnerables o abandonadas | Contexto; anexo técnico |
+| Calidad del código | Hallazgos de linters, código duplicado, mantenibilidad | Punto 2.1; la nota A–E va al anexo técnico |
+| Seguridad | Secretos expuestos; código inseguro (CWE / OWASP Top 10), dependencias con CVE | Secretos: punto 4.3. CWE y CVE: anexo técnico |
+| Integración responsable de IA | Datos enviados al proveedor de IA, filtros, manejo de errores, supervisión humana | Anexo técnico |
+| Plagio | Código copiado de proyectos públicos, similitud entre equipos, ideas o proyectos ya existentes en la web | Punto 2.4 |
 
 **Fuera de alcance:**
 
 - Análisis dinámico (ejecutar la app, pruebas de *prompt injection*, accesibilidad de la interfaz): se cubre en un framework aparte.
-- Evaluación del problema, impacto y pitch: la hacen los otros jueces.
+- Evaluación del problema, impacto y pitch: la hacen los jueces con la rúbrica del pitch (10 criterios, hasta 50 puntos).
+- Comprobar que los integrantes pueden explicar su código (punto 2.3) y juzgar el diseño y la UX (punto 4.2): requieren entrevista o demo; el reporte los marca como **revisión manual**.
+- Determinar si un código fue generado con IA: no hay método confiable. Se revisa que el uso de IA esté declarado y sea coherente con lo encontrado.
+
+## Checklist oficial de code review
+
+Fuente: *Technical Code Review Checklist* (Spark Center for Innovation in Learning, North American AI Challenge), compartido por los organizadores. Aplica a todos los equipos. El documento original no se guarda en este repositorio.
+
+Cada punto se marca como **cumple**, **no cumple** o **revisión manual**, con su evidencia. Al final va el *Reviewer feedback* del equipo.
+
+| # | Punto del checklist | Evidencia | Herramienta | Automatizable |
+| --- | --- | --- | --- | --- |
+| 1.1 | Commits con iteración significativa, sin cargas masivas sin explicar | Número de commits, tamaño de cada commit, % del código en el commit más grande | Señales de git | Sí |
+| 1.2 | Evidencia de colaboración del equipo | Autores distintos y commits por autor, comparados con `integrantes` | Señales de git | Sí |
+| 1.3 | El historial coincide con el proyecto final | Evolución del historial frente al código final | Claude Code | Parcial |
+| 2.1 | Código estructurado y relevante, con poco código sin usar, duplicado o de relleno | Duplicados, código muerto, TODO, *lorem ipsum*, *placeholders* | MegaLinter (incluye jscpd) + Claude Code | Parcial |
+| 2.2 | Decisiones técnicas intencionales para el proyecto | Arquitectura y elecciones de librerías | Claude Code | Parcial |
+| 2.3 | Los integrantes pueden explicar su código y decisiones | — | — | No: revisión manual |
+| 2.4 | Sin reutilización sustancial sin explicar de proyectos previos, hackathons o repositorios públicos | Coincidencias externas, similitud entre equipos, ideas en la web, commits previos al sprint | SCANOSS, Dolos, Claude Code + búsqueda web, señales de git | Parcial |
+| 3.1 | La documentación explica el proyecto, su funcionalidad y uso | README (obligatorio en la entrega) | Claude Code + markdownlint (MegaLinter) | Parcial |
+| 3.2 | Instalación, dependencias y requisitos documentados | README y archivos de dependencias | Claude Code | Parcial |
+| 3.3 | Lenguaje claro, conciso y específico del proyecto | README | Claude Code | Parcial |
+| 3.4 | Código externo o generado y asistencia de IA declarados, integrados y entendidos | Declaración en README y PDF de prompts, frente a lo encontrado por SCANOSS y la búsqueda web | Claude Code | Parcial |
+| 4.1 | El código coincide con la funcionalidad de la demo | Funciones descritas en la presentación frente al código | Claude Code (con `presentacion`) o revisión manual | Parcial |
+| 4.2 | Diseño y UX consideran al usuario | — | — | No: revisión manual |
+| 4.3 | Sin API keys, secretos, credenciales ni datos privados en el repositorio | Hallazgos con historial de git, sin mostrar el valor | Betterleaks (MegaLinter) | Sí |
+
+Toda marca automática es un borrador: la valida el revisor.
 
 ## Arquitectura y flujo
 
@@ -54,7 +90,7 @@ La entrada del sistema es un archivo `equipos.yml` con los datos del evento y la
 evento:
   nombre: "Hackathon 2026"           # aparece en el dashboard y los reportes
   inicio: 2026-11-01T09:00:00-06:00  # detecta commits previos al evento (plagio)
-  fin:    2026-11-03T18:00:00-06:00  # detecta commits posteriores al cierre
+  fin:    2026-11-03T18:00:00-06:00  # corte de la versión revisada y commits posteriores
 
 equipos:
   - id: equipo-01                    # carpeta en repos/ y reports/, y filtro del dashboard
@@ -64,6 +100,11 @@ equipos:
     repo: https://github.com/org/proyecto-alfa       # URL git
     rama: main                       # opcional, por defecto la rama principal
     commit: a1b2c3d                  # opcional: congela la versión entregada
+    integrantes:                     # opcional: evidencia de colaboración (punto 1.2)
+      - nombre: "Ana López"
+        github: analopez
+    presentacion: https://docs.google.com/presentation/d/…   # opcional: punto 4.1
+    prompts_ia: C:/entregas/alfa-prompts.pdf                 # opcional: punto 3.4
 
   - id: equipo-02
     nombre: "Equipo Beta"
@@ -75,16 +116,21 @@ equipos:
 | Campo | Obligatorio | Uso |
 | --- | --- | --- |
 | `evento.nombre` | Sí | Título en dashboard y reportes |
-| `evento.inicio`, `evento.fin` | Sí | Señales de git: commits antes del inicio o después del cierre |
+| `evento.inicio`, `evento.fin` | Sí | Inicio y cierre del sprint de desarrollo. Señales de git: commits antes del inicio o después del cierre; `fin` también fija la versión revisada |
 | `equipos[].id` | Sí | Identificador único; solo minúsculas, números y guiones |
 | `equipos[].nombre`, `proyecto` | Sí | Etiquetas en dashboard y reportes |
 | `equipos[].objetivo` | Sí | Palabras clave para la búsqueda de plagio en la web |
 | `equipos[].repo` | Sí | URL git, carpeta local o archivo ZIP |
-| `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último de la rama |
+| `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último commit de la rama anterior a `evento.fin` |
+| `equipos[].integrantes` | No | Nombre y usuario de GitHub de cada integrante; se comparan con los autores de los commits (punto 1.2) |
+| `equipos[].presentacion` | No | URL de la presentación entregada; se compara con el código (punto 4.1) |
+| `equipos[].prompts_ia` | No | Ruta local al PDF de prompts de IA entregado; se compara con lo declarado (punto 3.4) |
 
 **Reglas:**
 
 - `equipos.yml` contiene datos de los equipos: va en `.gitignore`. El repositorio solo incluye `equipos.example.yml`.
+- Los commits posteriores a `evento.fin` no se revisan, pero se reportan en las señales de git.
+- Las entregas del evento son repositorios públicos de GitHub (sin ZIP); carpeta local y ZIP quedan como respaldo.
 - Para repositorios privados se usan las credenciales de git del revisor; nunca se guardan tokens en `equipos.yml`.
 - Si un `id` ya fue analizado y cambia su `repo` o `commit`, se vuelve a obtener y analizar solo ese equipo.
 
@@ -277,7 +323,7 @@ Cada herramienta deja su resultado en `reports/` para que Infinity lo lea:
 | `reports/dolos/pairs.csv` | Dolos | Similitud por par de equipos |
 | `reports/<equipo>/review.json` | Claude Code | Hallazgos: criterio, gravedad, archivo, línea, descripción; checklist de IA |
 | `reports/<equipo>/web-plagiarism.json` | Claude Code | Proyectos encontrados: enlace, fecha, nivel de parecido |
-| `reports/<equipo>/git-signals.json` | Script de git | Fecha del primer commit, número de commits, si es fork |
+| `reports/<equipo>/git-signals.json` | Script de git | Primer y último commit, número de commits, tamaño de cada commit y % del código en el más grande, autores y commits por autor, commits antes de `evento.inicio` o después de `evento.fin`, si es fork |
 
 Limitaciones de Infinity: no está pensado para volúmenes grandes de datos (suficiente para un hackathon) y lee por URL, por eso `reports/` se sirve con un servidor de archivos local.
 
@@ -329,7 +375,15 @@ Prioridad **Should** (ver [MOSCOW.md](MOSCOW.md)): una interfaz propia en Next.j
 
 ## Detección de plagio
 
-El plagio se revisa en tres niveles. Una coincidencia indica similitud, no copia confirmada, y la decisión final es del revisor.
+El plagio se revisa en tres niveles y alimenta el punto 2.4 del checklist. Una coincidencia indica similitud, no copia confirmada: el revisor valida la evidencia y la decisión de descalificar es de los organizadores.
+
+**Reglas del evento (confirmadas por los organizadores):**
+
+- El trabajo debe ser original y hecho durante el sprint de dos semanas: **no se permite código previo**.
+- **Se permite usar IA y recursos externos**, pero el código no puede ser íntegramente generado por IA: una persona del equipo lo revisa, lo valida y puede explicarlo. El uso de IA y de código externo se declara (punto 3.4).
+- Una **semejanza sustancial** con un proyecto de otro hackatón o con un repositorio público **descalifica** al equipo.
+- El reporte presenta evidencia (enlaces, porcentajes, historial de commits), no un veredicto.
+- Pendiente: si las plantillas, los generadores de proyecto y el *boilerplate* cuentan como código previo (ver [Riesgos y pendientes](#riesgos-y-pendientes)).
 
 | Nivel | Herramienta | Qué detecta | Entrada |
 | --- | --- | --- | --- |
@@ -344,9 +398,7 @@ El plagio se revisa en tres niveles. Una coincidencia indica similitud, no copia
 3. Comparar idea, estructura y texto; anotar si la fecha del hallazgo es anterior al hackathon.
 4. Reportar cada coincidencia con su enlace.
 
-**Señales en el historial de git:** commits anteriores al inicio del hackathon, un solo commit con todo el código, o un repositorio que es fork de otro.
-
-**Antes de marcar plagio:** confirmar con los organizadores si las reglas permiten plantillas, código previo o código generado con IA.
+**Señales en el historial de git:** commits anteriores al inicio del sprint, un solo commit o pocos commits con casi todo el código, commits posteriores al cierre, o un repositorio que es fork de otro.
 
 ## Revisión asistida con Claude Code
 
@@ -428,14 +480,28 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 | Reportes exportados desactualizados tras re-analizar | Regenerar exportaciones en el mismo paso del pipeline |
 | Falsos positivos de las herramientas o de la IA | Toda conclusión la valida el revisor |
 
+**Resueltos con los organizadores:**
+
+| Pregunta | Respuesta |
+| --- | --- |
+| ¿Cómo se entregan los repositorios? | Por Airtable, una entrega por equipo: URL de GitHub público, URL de la presentación (Google Slides), PDF del Business Model Canvas y PDF de prompts de IA. Sin ZIP. El repo debe tener README y no incluir información privada ni API keys. Cierre: 5 de noviembre, 11:59 p.m. |
+| ¿Las reglas permiten plantillas, código previo o código generado con IA? | IA y recursos externos sí, con revisión humana y declarados; código previo no. Semejanza sustancial con otro proyecto descalifica (ver [Detección de plagio](#detección-de-plagio)) |
+| ¿La detección de plagio es parte del rol de Code Reviewer? | Sí: el code review verifica originalidad, uso de IA y autenticidad |
+| ¿Hay rúbrica oficial? | Para la revisión de código, el *Technical Code Review Checklist* (ver [Checklist oficial](#checklist-oficial-de-code-review)). La rúbrica de 10 criterios y 50 puntos es para el pitch y la usan los jueces |
+| ¿Por qué canal se entregan los reportes? | Las calificaciones se capturan en Airtable; los jueces reciben por correo el enlace a sus hojas unas 48 horas antes del evento |
+| ¿La seguridad es un criterio aparte? | No. Solo se exige que el repo no tenga información privada ni API keys (punto 4.3) |
+
 **Pendientes con los organizadores:**
 
-- [ ] ¿Cómo se entregan los repositorios (GitHub, invitación, zip)?
-- [ ] ¿Las reglas permiten plantillas, código previo o código generado con IA?
-- [ ] ¿La detección de plagio es parte del rol de Code Reviewer?
-- [ ] ¿Hay rúbrica oficial del evento para alinear los reportes?
-- [ ] ¿Por qué canal se entregan los reportes a jueces y organizadores?
-- [ ] ¿La seguridad pesa dentro de "calidad del código" o se reporta como criterio aparte?
+- [ ] ¿Se confirma que la IA y los recursos externos se permiten si se declaran y el equipo los entiende? ¿Puede el revisor consultar el PDF de prompts de IA?
+- [ ] ¿Las plantillas, generadores de proyecto (por ejemplo, `create-next-app`) y librerías cuentan como código previo?
+- [ ] Fecha y hora de inicio del sprint y zona horaria del cierre (5 de noviembre, 11:59 p.m.), para `evento.inicio` y `evento.fin`.
+- [ ] ¿Exportación CSV de Airtable con equipo, proyecto, repo, presentación e integrantes con usuario de GitHub?
+- [ ] ¿Hay sesión de preguntas con los equipos o acceso a la presentación o al video de la demo (puntos 2.3 y 4.1)?
+- [ ] ¿El revisor captura el checklist en Airtable o entrega un reporte por equipo? ¿En inglés o en español?
+- [ ] ¿Se incluyen los hallazgos de seguridad adicionales (CVE, CWE) como recomendaciones que no puntúan, o se omiten?
+- [ ] ¿Se confirma que el revisor solo aporta evidencia de plagio y la descalificación la deciden los organizadores?
+- [ ] ¿Cuántos equipos son y para qué fecha se necesitan las revisiones?
 
 ## Fuentes
 

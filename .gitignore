@@ -13,3 +13,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .ruff_cache/
+
+# Correspondencia con organizadores (correos y documentos de solo lectura)
+reponse/
