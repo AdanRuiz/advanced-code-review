@@ -17,6 +17,7 @@ COMMANDS = [
     "dolos",
     "analyze",
     "security",
+    "plagiarism",
     "report",
     "review-prompt",
     "review-validate",

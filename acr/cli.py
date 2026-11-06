@@ -24,8 +24,9 @@ from acr.megalinter import (
     MegaLinterError,
     run_megalinter,
 )
+from acr.plagiarism import PLAGIARISM_FILE, PlagiarismError, write_plagiarism
 from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_report
-from acr.review import ReviewError, render_prompt, validate_team
+from acr.review import WEB_PLAGIARISM_FILE, ReviewError, render_prompt, validate_team
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
 from acr.security import SECURITY_FILE, SecurityError, write_security
@@ -325,7 +326,9 @@ def _analyze(args: argparse.Namespace) -> int:
         print("acr analyze: Dolos falló; se conservan sus reportes anteriores", file=sys.stderr)
     # PB-21: the Seguridad page reads every team, also the ones not analyzed in this run.
     security_ok = _write_security([team.id for team in config.equipos], "acr analyze")
-    return EXIT_OK if result.ok and security_ok else EXIT_ERROR
+    # PB-22: the same for the Plagio page.
+    plagiarism_ok = _write_plagiarism([team.id for team in config.equipos], "acr analyze")
+    return EXIT_OK if result.ok and security_ok and plagiarism_ok else EXIT_ERROR
 
 
 def _write_security(team_ids: list[str], command: str) -> bool:
@@ -360,6 +363,56 @@ def _security(args: argparse.Namespace) -> int:
             print(f"  - {error}", file=sys.stderr)
         return EXIT_ERROR
     ok = _write_security([team.id for team in config.equipos], "acr security")
+    return EXIT_OK if ok else EXIT_ERROR
+
+
+def _write_plagiarism(team_ids: list[str], command: str) -> bool:
+    try:
+        path, data = write_plagiarism(team_ids, DEFAULT_REPORTS_DIR)
+    except (PlagiarismError, OSError) as exc:
+        print(f"{command}: error al escribir {PLAGIARISM_FILE}: {exc}", file=sys.stderr)
+        return False
+    teams = data["teams"]
+    print(
+        f"Plagio: {sum(t['external_matches'] for t in teams)} coincidencia(s) con código externo, "
+        f"{sum(p['similar'] for p in data['team_pairs'])} par(es) de equipos similares y "
+        f"{sum(t['web_matches'] for t in teams)} proyecto(s) parecido(s) en la web en "
+        f"{len(teams)} equipo(s) -> {path.as_posix()}"
+    )
+    warnings = [
+        ([t["team"] for t in teams if not t["scanoss"]], "sin scanoss.json", "corre 'acr scanoss'"),
+        (
+            [t["team"] for t in teams if not t["git_signals"]],
+            "sin git-signals.json",
+            "corre 'acr git-signals'",
+        ),
+        (
+            [
+                t["team"]
+                for t in teams
+                if not t["web"] and (DEFAULT_REPORTS_DIR / t["team"] / WEB_PLAGIARISM_FILE).is_file()
+            ],
+            f"{WEB_PLAGIARISM_FILE} no válido",
+            "corre 'acr review-validate'",
+        ),
+    ]
+    for missing, what, hint in warnings:
+        if missing:
+            print(f"aviso: {what} para {', '.join(missing)}; {hint}", file=sys.stderr)
+    if not data["similarity"] and len(teams) > 1:
+        print("aviso: sin datos de Dolos (reports/dolos/pairs.csv); corre 'acr dolos'", file=sys.stderr)
+    return True
+
+
+def _plagiarism(args: argparse.Namespace) -> int:
+    """PB-22: write reports/plagiarism.json (Plagio page) from the results of every team."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+    ok = _write_plagiarism([team.id for team in config.equipos], "acr plagiarism")
     return EXIT_OK if ok else EXIT_ERROR
 
 
@@ -622,6 +675,15 @@ def build_parser() -> argparse.ArgumentParser:
         "analizar y nunca escribe el valor de un secreto.",
     )
     security.set_defaults(handler=_security)
+
+    plagiarism = subparsers.add_parser(
+        "plagiarism",
+        help="resume SCANOSS, Dolos, búsqueda web y señales de git en reports/plagiarism.json",
+        description="Lee scanoss.json, web-plagiarism.json y git-signals.json de cada equipo y "
+        "reports/dolos/pairs.csv, y deja en reports/plagiarism.json los datos de la página Plagio "
+        "del dashboard. No vuelve a analizar.",
+    )
+    plagiarism.set_defaults(handler=_plagiarism)
 
     review_prompt = subparsers.add_parser(
         "review-prompt",

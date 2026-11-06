@@ -64,11 +64,484 @@
       "id": 1,
       "type": "text",
       "title": "5. Plagio",
-      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
       "options": {
         "mode": "markdown",
-        "content": "**Código externo, similitud entre equipos, ideas en la web e historial de git.** Los paneles de esta página llegan con PB-22 (SPEC.md, sección \"5. Plagio\")."
+        "content": "**Código externo, similitud entre equipos, ideas en la web e historial de git.** SCANOSS, Dolos, la búsqueda web con Claude Code y las señales de git, resumidos en `reports/plagiarism.json` (`acr plagiarism` o `acr analyze`). **Una coincidencia indica similitud, no copia confirmada:** la decisión es del revisor, después de confirmar con los organizadores si se permiten plantillas, código previo o código generado con IA."
       }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Coincidencias con código externo",
+      "description": "Archivos o fragmentos con coincidencia en proyectos open source conocidos (SCANOSS).",
+      "gridPos": {"h": 5, "w": 8, "x": 0, "y": 3},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "external_matches", "text": "Coincidencias con código externo", "type": "number"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Sin datos",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "fields": "/^Coincidencias con código externo$/", "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Pares de equipos similares",
+      "description": "Pares de equipos entre los que Dolos encontró archivos similares; cada par cuenta una vez.",
+      "gridPos": {"h": 5, "w": 8, "x": 8, "y": 3},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "team_pairs",
+          "columns": [
+            {"selector": "team_a", "text": "Equipo A", "type": "string"},
+            {"selector": "team_b", "text": "Equipo B", "type": "string"},
+            {"selector": "similar", "text": "Pares similares", "type": "number"}
+          ],
+          "filterExpression": "team_a IN (${equipo:singlequote}) || team_b IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Sin datos",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "fields": "/^Pares similares$/", "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Proyectos parecidos en la web",
+      "description": "Proyectos ya existentes con una idea, estructura o texto parecido (búsqueda web con Claude Code).",
+      "gridPos": {"h": 5, "w": 8, "x": 16, "y": 3},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "web_matches", "text": "Proyectos parecidos en la web", "type": "number"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Sin datos",
+          "color": {"mode": "thresholds"},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["sum"], "fields": "/^Proyectos parecidos en la web$/", "values": false},
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto"
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Similitud entre equipos",
+      "description": "Matriz equipo × equipo con la mayor similitud de Dolos entre dos de sus archivos (0 a 100 %). Filas: equipos elegidos en la variable; columnas: todos los equipos comparados.",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 8},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "similarity",
+          "columns": [
+            {"selector": "team_a", "text": "team_a", "type": "string"},
+            {"selector": "team_b", "text": "team_b", "type": "string"},
+            {"selector": "similarity", "text": "similarity", "type": "number"}
+          ],
+          "filterExpression": "team_a IN (${equipo:singlequote})"
+        }
+      ],
+      "transformations": [
+        {"id": "groupingToMatrix", "options": {"rowField": "team_a", "columnField": "team_b", "valueField": "similarity", "emptyValue": "null"}}
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "min": 0,
+          "max": 1,
+          "noValue": "Sin datos",
+          "color": {"mode": "continuous-GrYlRd"},
+          "custom": {"align": "center", "cellOptions": {"type": "color-background"}}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "team_a\\team_b"},
+            "properties": [
+              {"id": "displayName", "value": "Equipo"},
+              {"id": "custom.cellOptions", "value": {"type": "auto"}},
+              {"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}
+            ]
+          }
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm", "footer": {"show": false, "reducer": ["count"], "countRows": false}}
+    },
+    {
+      "id": 6,
+      "type": "barchart",
+      "title": "Código externo por equipo",
+      "description": "Porcentaje de archivos del equipo con coincidencia en SCANOSS.",
+      "gridPos": {"h": 10, "w": 8, "x": 0, "y": 18},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "matched_percent", "text": "% de archivos con coincidencia", "type": "number"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "decimals": 1,
+          "min": 0,
+          "max": 100,
+          "color": {"mode": "fixed", "fixedColor": "orange"},
+          "custom": {"fillOpacity": 85, "lineWidth": 0}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {
+        "xField": "Equipo",
+        "orientation": "horizontal",
+        "stacking": "none",
+        "showValue": "auto",
+        "groupWidth": 0.7,
+        "barWidth": 0.9,
+        "legend": {"displayMode": "list", "placement": "bottom", "showLegend": false},
+        "tooltip": {"mode": "single", "sort": "none"}
+      }
+    },
+    {
+      "id": 7,
+      "type": "table",
+      "title": "Código externo",
+      "description": "Por archivo: tipo de coincidencia, %, proyecto de origen, licencias y enlace (SCANOSS).",
+      "gridPos": {"h": 10, "w": 16, "x": 8, "y": 18},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "external_code",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "file", "text": "Archivo", "type": "string"},
+            {"selector": "match", "text": "Tipo", "type": "string"},
+            {"selector": "matched_percent", "text": "Coincidencia", "type": "number"},
+            {"selector": "project", "text": "Proyecto de origen", "type": "string"},
+            {"selector": "licenses", "text": "Licencias", "type": "string"},
+            {"selector": "url", "text": "Enlace", "type": "string"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin coincidencias", "custom": {"align": "auto", "filterable": true}},
+        "overrides": [
+          {"matcher": {"id": "byName", "options": "Coincidencia"}, "properties": [{"id": "unit", "value": "percent"}, {"id": "decimals", "value": 0}]},
+          {
+            "matcher": {"id": "byName", "options": "Tipo"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"file": {"text": "archivo completo", "index": 0}, "snippet": {"text": "fragmento", "index": 1}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Enlace"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir el proyecto de origen", "url": "${__value.raw}", "targetBlank": true}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{"displayName": "Coincidencia", "desc": true}],
+        "footer": {"show": false, "reducer": ["count"], "countRows": false}
+      }
+    },
+    {
+      "id": 8,
+      "type": "table",
+      "title": "Ideas en la web",
+      "description": "Proyectos ya existentes encontrados con la búsqueda web: enlace, fecha y nivel de parecido (Claude Code). Solo se leen archivos web-plagiarism.json válidos.",
+      "gridPos": {"h": 9, "w": 24, "x": 0, "y": 28},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "web_matches",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "title", "text": "Proyecto encontrado", "type": "string"},
+            {"selector": "url", "text": "Enlace", "type": "string"},
+            {"selector": "source", "text": "Fuente", "type": "string"},
+            {"selector": "published", "text": "Fecha", "type": "string"},
+            {"selector": "before_event", "text": "Anterior al evento", "type": "boolean"},
+            {"selector": "similarity", "text": "Nivel de parecido", "type": "string"},
+            {"selector": "status", "text": "Estado de la revisión", "type": "string"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin proyectos parecidos", "custom": {"align": "auto", "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Enlace"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir el proyecto encontrado", "url": "${__value.raw}", "targetBlank": true}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Fecha"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"": {"text": "desconocida", "index": 0}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Anterior al evento"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {"type": "value", "options": {"true": {"text": "sí", "index": 0}, "false": {"text": "no", "index": 1}}},
+                  {"type": "special", "options": {"match": "null", "result": {"text": "desconocido", "index": 2}}}
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Nivel de parecido"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "idea": {"text": "idea", "color": "yellow", "index": 0},
+                      "structure": {"text": "estructura", "color": "orange", "index": 1},
+                      "text": {"text": "texto", "color": "red", "index": 2}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Fuente"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "github": {"text": "GitHub", "index": 0},
+                      "devpost": {"text": "Devpost", "index": 1},
+                      "hackathon_gallery": {"text": "galería de hackathon", "index": 2},
+                      "product_hunt": {"text": "Product Hunt", "index": 3},
+                      "tutorial": {"text": "tutorial", "index": 4},
+                      "other": {"text": "otra", "index": 5}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Estado de la revisión"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"draft": {"text": "borrador", "index": 0}, "validated": {"text": "validada", "index": 1}}}]}]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm", "footer": {"show": false, "reducer": ["count"], "countRows": false}}
+    },
+    {
+      "id": 9,
+      "type": "table",
+      "title": "Historial de git",
+      "description": "Señales de git: commits anteriores al inicio del evento, un solo commit con todo el código y fork.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 37},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "has_git", "text": "Historial de git", "type": "boolean"},
+            {"selector": "commit_count", "text": "Commits", "type": "number"},
+            {"selector": "first_commit", "text": "Primer commit", "type": "string"},
+            {"selector": "before_start", "text": "Commits antes del inicio", "type": "number"},
+            {"selector": "after_end", "text": "Commits después del cierre", "type": "number"},
+            {"selector": "single_commit", "text": "Commit único", "type": "boolean"},
+            {"selector": "fork", "text": "Fork", "type": "boolean"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin datos", "custom": {"align": "auto", "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Historial de git"},
+            "properties": [{"id": "mappings", "value": [{"type": "value", "options": {"true": {"text": "sí", "index": 0}, "false": {"text": "no", "index": 1}}}]}]
+          },
+          {"matcher": {"id": "byName", "options": "Commits"}, "properties": [{"id": "decimals", "value": 0}]},
+          {
+            "matcher": {"id": "byName", "options": "Commits antes del inicio"},
+            "properties": [
+              {"id": "decimals", "value": 0},
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}
+            ]
+          },
+          {"matcher": {"id": "byName", "options": "Commits después del cierre"}, "properties": [{"id": "decimals", "value": 0}]},
+          {
+            "matcher": {"id": "byName", "options": "Commit único"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "mappings", "value": [{"type": "value", "options": {"true": {"text": "sí", "color": "orange", "index": 0}, "false": {"text": "no", "color": "green", "index": 1}}}]}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Fork"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {"type": "value", "options": {"true": {"text": "sí", "index": 0}, "false": {"text": "no", "index": 1}}},
+                  {"type": "special", "options": {"match": "null", "result": {"text": "sin dato", "index": 2}}}
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {"showHeader": true, "cellHeight": "sm", "footer": {"show": false, "reducer": ["count"], "countRows": false}}
     }
   ]
 }

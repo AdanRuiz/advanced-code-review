@@ -59,6 +59,8 @@ python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con
 python -m acr scanoss [ID]           # código open source conocido con SCANOSS, solo huellas (PB-10)
 python -m acr dolos                  # similitud de código entre todos los equipos con Dolos (PB-11)
 python -m acr analyze [ID]           # corre el análisis completo (PB-12)
+python -m acr security               # datos de la página Seguridad en reports/security.json (PB-21)
+python -m acr plagiarism             # datos de la página Plagio en reports/plagiarism.json (PB-22)
 python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la revisión asistida (PB-13)
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
 python -m acr report [ID]            # reporte Markdown por equipo en reports/<id>/reporte.md (PB-14)
@@ -133,7 +135,7 @@ Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `P
 
 1. Por equipo: `fetch`, `git-signals`, `scc`, `megalinter` y `scanoss` (mismas opciones `--max-zip-mb`, `--engine`, `--image` y `--timeout-min`). Si falla la obtención, ese equipo se detiene ahí; si falla un paso posterior, se registra y se siguen los demás pasos y equipos.
 2. Al final, `dolos` una sola vez sobre todos los equipos obtenidos (también los que no se volvieron a analizar), para que la matriz quede al día. Con menos de dos equipos obtenidos se omite.
-3. Después, `security` sobre todos los equipos de `equipos.yml` (ver abajo).
+3. Después, `security` y `plagiarism` sobre todos los equipos de `equipos.yml` (ver abajo).
 
 El avance queda en `reports/status.json`, que se reescribe en cada paso:
 
@@ -150,6 +152,16 @@ Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sist
 - `secrets` (Betterleaks en `megalinter.sarif`): **solo tipo, archivo y línea**; ni el valor ni el mensaje del hallazgo se copian.
 
 Un SARIF que falta o no se puede leer deja ese equipo en cero y se avisa. Usa el mismo análisis de SARIF que `acr report`, así que el reporte y el dashboard cuentan lo mismo.
+
+`acr plagiarism` (también al final de `acr analyze`) hace lo mismo para la página Plagio: junta en `reports/plagiarism.json` los tres niveles de detección de plagio y las señales de git de todos los equipos de `equipos.yml`, a partir de los archivos que ya están en `reports/` (no vuelve a analizar):
+
+- `teams`: por equipo, totales de SCANOSS (archivos revisados, con coincidencia, % y coincidencias), de Dolos (equipos con archivos similares y similitud máxima), de la búsqueda web (proyectos encontrados, cuántos anteriores al evento y estado `draft`/`validated`) y de `git-signals.json` (historial, commits, primer commit, commits antes del inicio y después del cierre, commit único y fork), y qué archivos había.
+- `similarity` (`dolos/pairs.csv`): similitud entre cada dos equipos en ambos sentidos (`team_a` = fila de la matriz, `team_b` = columna), con los dos archivos más parecidos.
+- `team_pairs`: cada par de equipos una vez, con `similar` = 1 si Dolos encontró archivos similares entre ellos.
+- `external_code` (`scanoss.json`): cada coincidencia con archivo, tipo (archivo completo o fragmento), %, proyecto de origen, licencias y enlace.
+- `web_matches` (`web-plagiarism.json`): cada proyecto encontrado con enlace, fuente, fecha, si es anterior al evento y nivel de parecido. Solo se lee si pasa el mismo validador que `acr review-validate`; si no, se omite y se avisa.
+
+Un archivo que falta o no se puede leer deja ese equipo en cero y se avisa. `git-signals.json` aún no detecta forks (PB-7), así que la columna Fork queda "sin dato". Una coincidencia indica similitud, no copia confirmada.
 
 La revisión asistida la hace el revisor con Claude Code (suscripción propia), equipo por equipo, después de `acr analyze`:
 
@@ -211,7 +223,16 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 - **Secretos expuestos:** equipo, tipo, archivo y línea, sin el valor.
 - Clic en un equipo en las tablas o en las barras de CVE abre la página Equipo filtrada.
 
-Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20 y PB-22) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
+**5. Plagio** (PB-22) lee `reports/plagiarism.json` con Infinity, filtrado por la variable `equipo`:
+
+- 3 tarjetas verde (0) / naranja (1 o más): coincidencias con código externo (SCANOSS), pares de equipos similares (Dolos; cada par cuenta una vez) y proyectos parecidos en la web.
+- **Similitud entre equipos:** matriz equipo × equipo de Dolos coloreada por % (verde → rojo); filas = equipos elegidos, columnas = todos.
+- **Código externo:** barras con el % de archivos con coincidencia por equipo y tabla por archivo con tipo, %, proyecto de origen, licencias y enlace.
+- **Ideas en la web:** equipo, proyecto encontrado, enlace, fuente, fecha, si es anterior al evento, nivel de parecido (idea / estructura / texto) y estado de la revisión.
+- **Historial de git:** commits, primer commit, commits antes del inicio y después del cierre, commit único y fork.
+- Clic en un equipo en las tablas, las barras o la matriz abre la página Equipo filtrada; los enlaces de SCANOSS y de la web abren en otra pestaña.
+
+Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
