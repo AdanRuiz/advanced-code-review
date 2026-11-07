@@ -244,6 +244,8 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 - **Variable `herramienta`** solo en Calidad y Seguridad: linters, con `label_values(linter)` de Prometheus.
 - **Botones de exportación** (PB-23) en todas las páginas, junto al navbar: **PDF equipo** y **MD equipo** (`http://localhost:8080/reports/${equipo}/reporte.pdf` y `.md`) y **ZIP todos** (`/reports/todos.zip`). Se abren en otra pestaña, piden el usuario y la contraseña del servidor de archivos y se descargan como archivo (`Content-Disposition: attachment`). Con `equipo` = Todos o varios equipos, el servidor de archivos redirige PDF y MD a `todos.zip`. Los archivos los genera `acr export` (o `acr analyze`).
 
+**1. Resumen** (PB-41) tiene por ahora el panel **Estado del análisis**: tabla que lee `reports/status.json` con Infinity, filtrada por la variable `equipo`, con el id y el nombre de cada equipo, el estado coloreado (pendiente gris, obteniendo azul, analizando amarillo, listo verde, error rojo) y la hora de la última corrida (`finished_at`, «sin corrida» si nunca terminó). Clic en el equipo abre la página Equipo filtrada. Los demás paneles del Resumen llegan con PB-18 y PB-42/PB-43.
+
 **4. Seguridad** (PB-21) lee `reports/security.json` con Infinity, filtrado por la variable `equipo`:
 
 - 4 tarjetas verde (0) / rojo (1 o más): **CVE críticas/altas con corrección** (indicador principal, arriba a la izquierda), hallazgos de Semgrep, secretos de Betterleaks y total de CVE.

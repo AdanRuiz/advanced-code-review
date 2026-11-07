@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from acr import analyze
+
 ROOT = Path(__file__).resolve().parent.parent
 GRAFANA = ROOT / "services" / "grafana"
 DASHBOARDS = GRAFANA / "dashboards"
@@ -210,3 +212,64 @@ def test_export_buttons_use_the_browser_side_file_server(compose):
     assert "127.0.0.1:8080:8080" in compose["services"]["files"]["ports"]
     for url in EXPORT_LINKS.values():
         assert url.startswith("http://localhost:8080/reports/")
+
+
+# --- Resumen: Estado del análisis (PB-41, SPEC.md "1. Resumen") --------------------------------
+
+STATES = {analyze.PENDING, analyze.FETCHING, analyze.ANALYZING, analyze.DONE, analyze.ERROR}
+
+
+def panel(dashboard: dict, title: str) -> dict:
+    (found,) = [item for item in dashboard["panels"] if item.get("title") == title]
+    return found
+
+
+def overrides(found: dict) -> dict:
+    return {
+        override["matcher"]["options"]: {prop["id"]: prop["value"] for prop in override["properties"]}
+        for override in found["fieldConfig"]["overrides"]
+    }
+
+
+def test_status_panel_reads_status_json_with_infinity(dashboards):
+    status = panel(dashboards["resumen"], "Estado del análisis")
+    assert status["type"] == "table"
+    assert status["datasource"] == {"type": INFINITY, "uid": "acr-infinity"}
+    (target,) = status["targets"]
+    assert target["datasource"] == {"type": INFINITY, "uid": "acr-infinity"}
+    assert target["url"] == "http://files:8080/reports/status.json"
+    assert target["root_selector"] == "teams"
+    assert {column["selector"]: column["text"] for column in target["columns"]} == {
+        "id": "Equipo",
+        "nombre": "Nombre",
+        "state": "Estado",
+        "finished_at": "Última corrida",
+    }
+
+
+def test_status_panel_respects_the_equipo_variable(dashboards):
+    (target,) = panel(dashboards["resumen"], "Estado del análisis")["targets"]
+    assert target["filterExpression"] == "id IN (${equipo:singlequote})"
+
+
+def test_status_panel_colors_every_state(dashboards):
+    estado = overrides(panel(dashboards["resumen"], "Estado del análisis"))["Estado"]
+    assert estado["custom.cellOptions"] == {"type": "color-background"}
+    (mapping,) = estado["mappings"]
+    options = mapping["options"]
+    assert set(options) == STATES  # the same values acr analyze writes
+    colors = [option["color"] for option in options.values()]
+    assert all(colors) and len(set(colors)) == len(colors)
+    assert options[analyze.DONE]["color"] == "green"
+    assert options[analyze.ERROR]["color"] == "red"
+
+
+def test_status_panel_shows_last_run_time_and_links_to_team(dashboards):
+    status = panel(dashboards["resumen"], "Estado del análisis")
+    (target,) = status["targets"]
+    (finished,) = [column for column in target["columns"] if column["selector"] == "finished_at"]
+    assert finished["type"] == "timestamp"
+    found = overrides(status)
+    assert found["Última corrida"]["unit"] == "dateTimeAsLocal"
+    (link,) = found["Equipo"]["links"]
+    assert link["url"] == "/d/acr-equipo?var-equipo=${__value.raw}"
