@@ -1,3 +1,5 @@
+"""Tests for the team report in English (PB-14, PB-59, SPEC.md "Entregables")."""
+
 import json
 from datetime import UTC, datetime
 from pathlib import Path
@@ -8,16 +10,24 @@ import yaml
 from acr.cli import EXIT_ERROR, EXIT_OK, main
 from acr.config import Event, Team
 from acr.report import (
+    CHECKLIST_ITEMS,
+    JUDGE_QUESTIONS_FILE,
     REPORT_FILE,
     ReportError,
+    build_judge_questions,
     build_report,
+    checklist,
     fixable_critical,
     link,
+    load_sources,
     md,
+    quality_grade,
     sarif_findings,
     vulnerabilities,
+    write_judge_questions,
     write_report,
 )
+from acr.review import AI_CHECKLIST, OFFICIAL_CHECKLIST, OWASP_LLM
 
 EVENT = Event(
     "Hackathon 2026",
@@ -29,24 +39,26 @@ NOW = datetime(2026, 11, 5, 12, tzinfo=UTC)
 SECRET = "sk-THIS-IS-A-SECRET-VALUE-123"
 
 TEMPLATE_HEADINGS = [
-    "# Reporte de revisión – Equipo Alfa – Proyecto Alfa",
-    "## Resumen",
-    "- Lenguajes y tamaño (scc):",
-    "- Enlace al dashboard (Grafana):",
-    "- Hallazgos críticos:",
-    "## Factibilidad técnica",
-    "## Calidad del código",
-    "## Seguridad",
-    "- CVE críticas/altas con corrección disponible:",
-    "- Código inseguro (CWE / OWASP Top 10):",
-    "- Secretos expuestos:",
-    "## Integración responsable de IA",
-    "## Plagio",
-    "- Código externo (SCANOSS):",
-    "- Entre equipos (Dolos):",
-    "- Ideas en la web:",
-    "- Historial de git:",
-    "## Recomendaciones al equipo",
+    "# Code Review Report – Equipo Alfa – Proyecto Alfa",
+    "## Summary",
+    "- Languages and size (scc):",
+    "- Checklist:",
+    "- Key findings:",
+    "## Official checklist",
+    "| # | Item | Result | Evidence |",
+    "## Plagiarism and originality evidence",
+    "- External code (SCANOSS):",
+    "- Between teams (Dolos):",
+    "- Similar projects on the web:",
+    "- Git history:",
+    "- Templates, generators and third-party code:",
+    "## Questions for the judges",
+    "## Reviewer feedback",
+    "## Technical annex (formative, not scored)",
+    "- Dependencies with known vulnerabilities (CVE, fixed version):",
+    "- Insecure code patterns (CWE / OWASP Top 10):",
+    "- Code quality (MegaLinter grade A–E):",
+    "- Responsible AI integration and OWASP LLM:",
 ]
 
 
@@ -78,7 +90,85 @@ def write_json(path: Path, data) -> None:
     path.write_text(json.dumps(data), encoding="utf-8")
 
 
-def full_reports(reports: Path) -> None:
+def signals(**changes) -> dict:
+    data = {
+        "has_git": True, "commit_count": 1, "single_commit": True,
+        "first_commit": {"author_date": "2026-10-20T10:00:00+00:00"},
+        "outside_event": {"before_start": 1, "after_end": 0, "commits": []},
+        "largest_commit": {"hash": "abcdef1234", "author_date": "2026-10-20T10:00:00+00:00",
+                           "lines_added": 900, "percent_of_code": 100.0},
+        "largest_commit_percent": 100.0,
+        "author_count": 1, "single_author": True,
+        "authors": [{"name": "Ana", "github": "ana", "member": True, "commits": 1}],
+        "members": None, "members_without_commits": [], "authors_not_members": 0,
+        "fork": None,
+    }
+    data.update(changes)
+    return data
+
+
+def official(item_id, result="pass", notes="Checked."):
+    return {"id": item_id, "result": result, "notes": notes, "evidence": [{"file": "README.md", "line": 1}]}
+
+
+def check(item_id, status="pass"):
+    evidence = [{"file": "src/app.ts", "line": 3}]
+    return {"id": item_id, "status": status, "notes": "Reviewed.", "evidence": evidence}
+
+
+def review_data(team_id="equipo-01") -> dict:
+    items = [official(item_id) for item_id in OFFICIAL_CHECKLIST]
+    items[1] = official("2.1", "fail", "Lots of lorem ipsum.")
+    items[-1] = official("4.1", "manual_review", "Presentation not available.")
+    return {
+        "schema_version": 2,
+        "team_id": team_id,
+        "tool": "claude-code",
+        "generated_at": "2026-11-04T10:00:00-06:00",
+        "status": "draft",
+        "summary": "Feasible project with one uncited library.",
+        "official_checklist": items,
+        "external_code": [
+            {"path": "src", "origin": "third_party_uncited", "source": "lodash", "notes": "Not cited."},
+            {"path": "web", "origin": "generator", "source": "create-next-app", "notes": "Scaffold."},
+        ],
+        "documents": {
+            "prompts_pdf": {"status": "read", "notes": "Declares ChatGPT for src/api/."},
+            "presentation": {"status": "url_only", "notes": "Only a URL."},
+        },
+        "judge_questions": [
+            {"topic": "2.3", "question": "Why did you split the API?", "file": "src/api.ts", "line": 10},
+            {"topic": "4.2", "question": "How do children navigate?", "file": "src/ui.tsx", "line": 5},
+            {"topic": "privacy", "question": "Which data reaches OpenAI?", "file": "src/chat.ts", "line": 42},
+        ],
+        "findings": [
+            {"id": "F1", "criterion": "responsible_ai", "severity": "high", "file": "src/chat.ts", "line": 42,
+             "title": "User input concatenated to the prompt", "description": "Prompt injection.",
+             "recommendation": "Separate roles."},
+        ],
+        "ai_checklist": {"uses_ai": True, "providers": ["OpenAI"],
+                         "items": [check(item_id) for item_id in AI_CHECKLIST]},
+        "owasp_llm": [check(item_id, "fail") for item_id in OWASP_LLM],
+    }
+
+
+def web_data() -> dict:
+    return {
+        "schema_version": 1,
+        "team_id": "equipo-01",
+        "tool": "claude-code",
+        "generated_at": "2026-11-04T10:30:00-06:00",
+        "status": "draft",
+        "keywords": ["study helper"],
+        "queries": [{"query": "study helper hackathon", "source": "devpost"}],
+        "matches": [{
+            "title": "StudyBuddy", "url": "https://devpost.com/software/studybuddy", "source": "devpost",
+            "published": "2025-05-10", "before_event": True, "similarity": "idea", "evidence": "Same idea.",
+        }],
+    }
+
+
+def full_reports(reports: Path, with_review: bool = True) -> None:
     team = reports / "equipo-01"
     write_json(team / "scc.json", {
         "totals": {"languages": 2, "files": 12, "code": 900},
@@ -91,6 +181,7 @@ def full_reports(reports: Path) -> None:
         run("ESLint", [result("no-unused-vars", "file:///tmp/lint/src/app.ts", 3),
                        result("eqeqeq", "/tmp/lint/src/app.ts", 9, level="warning")]),
         run("Prettier", []),
+        run("Stylelint", [result("x", "/tmp/lint/a.css", 1, level="warning")]),
         run("Betterleaks", [result("generic-api-key", "/tmp/lint/.env", 2, text=f"secret {SECRET}")]),
         run("Trivy", [trivy_result("CVE-2021-1", "lodash", "4.17.15", "4.17.21", "HIGH")]),
     ]})
@@ -112,11 +203,7 @@ def full_reports(reports: Path) -> None:
                      "component": "lodash", "vendor": "lodash", "version": "4.17.21",
                      "licenses": ["MIT"], "url": "https://github.com/lodash/lodash"}],
     })
-    write_json(team / "git-signals.json", {
-        "has_git": True, "commit_count": 1, "single_commit": True,
-        "first_commit": {"author_date": "2026-10-20T10:00:00+00:00"},
-        "outside_event": {"before_start": 1, "after_end": 0, "commits": []},
-    })
+    write_json(team / "git-signals.json", signals())
     dolos = reports / "dolos" / "pairs.csv"
     dolos.parent.mkdir(parents=True, exist_ok=True)
     dolos.write_text(
@@ -126,36 +213,59 @@ def full_reports(reports: Path) -> None:
         "equipo-02,equipo-03,0.5,1,10,20,a.py,b.py\n",
         encoding="utf-8",
     )
+    if with_review:
+        write_json(team / "review.json", review_data())
+        write_json(team / "web-plagiarism.json", web_data())
 
 
-def test_report_follows_spec_template_with_all_results(tmp_path):
+def row(text: str, item: str) -> str:
+    return next(line for line in text.splitlines() if line.startswith(f"| {item} |"))
+
+
+def test_report_follows_english_template_with_all_results(tmp_path):
     full_reports(tmp_path)
     text = build_report(TEAM, EVENT, tmp_path, names={"equipo-02": "Equipo Beta"}, now=NOW)
     positions = [text.index(heading) for heading in TEMPLATE_HEADINGS]
     assert positions == sorted(positions)
-    assert "TypeScript, CSS; 900 líneas de código en 12 archivo(s)" in text
-    assert "[http://localhost:3000](<http://localhost:3000>)" in text
-    assert "Generado: 2026-11-05T12:00:00+00:00" in text
-    # Security: only HIGH/CRITICAL with a fix count; secrets counted; Semgrep classified.
-    assert "CVE críticas/altas con corrección disponible: **1** (total de CVE en dependencias: 3" in text
-    assert "| CVE-2021-1 | lodash | 4.17.15 | 4.17.21 | 7.5 | alta |" in text
+    assert "TypeScript, CSS; 900 lines of code in 12 file(s)" in text
+    assert "Dashboard: [http://localhost:3000](<http://localhost:3000>)" in text
+    assert "Generated: 2026-11-05T12:00:00+00:00" in text
+    # Checklist: every item once, in order; 1.1 (single commit), 1.2 (single author), 2.1 and 4.3 fail.
+    rows = [line.split(" | ")[0][2:] for line in text.splitlines() if line.startswith("| ") and
+            line.split(" | ")[0][2:] in CHECKLIST_ITEMS]
+    assert rows == list(CHECKLIST_ITEMS)
+    assert "- Checklist: 7 pass · 4 fail · 3 manual review" in text
+    assert "- Key findings: failed items: 1.1, 1.2, 2.1, 4.3;" in text
+    assert "assisted review (draft): Feasible project with one uncited library." in text
+    assert "| **Fail** | A single commit holds all the code (commit abcdef1" in row(text, "1.1")
+    assert "A single author is an alert" in row(text, "1.2")
+    assert "| **Fail** | Lots of lorem ipsum. Evidence: README.md:1. |" in row(text, "2.1")
+    assert "| Manual review | Requires an interview or the demo" in row(text, "2.3")
+    assert "AI prompts PDF: read; Declares ChatGPT for src/api/." in row(text, "3.4")
+    assert "Presentation: only a URL, PDF pending; Only a URL." in row(text, "4.1")
+    assert "1 secret(s) found by Betterleaks (values hidden): generic-api-key at .env:2." in row(text, "4.3")
+    # Plagiarism and originality evidence.
+    assert "1 of 10 file(s) with matches (10.0%)" in text
+    lodash = "[lodash lodash 4.17.21](<https://github.com/lodash/lodash>)"
+    assert f"| src/util.ts | file | 100.0% | {lodash} | MIT | No |" in text  # folder "src" is uncited
+    assert "highest similarity 85% with Equipo Beta; 1 of 2 team(s) with similar files" in text
+    study = "[StudyBuddy](<https://devpost.com/software/studybuddy>)"
+    assert f"| {study} | devpost | 2025-05-10 | Yes | idea |" in text
+    assert "1 before the sprint started" in text and "**single commit with all the code**" in text
+    assert "| web | Project generator (to review) | create-next-app | Scaffold. |" in text
+    # Questions, feedback and annex.
+    assert "1. **2.3 Explaining the code:** Why did you split the API? (src/api.ts:10)" in text
+    assert "3. **Privacy:** Which data reaches OpenAI? (src/chat.ts:42)" in text
+    assert "> To be written by the reviewer." in text and "Revoke and rotate the exposed secrets" in text
+    assert "**1** critical/high CVE with a fix available (3 CVE in 3 package(s)" in text
+    assert "| CVE-2021-1 | lodash | 4.17.15 | 4.17.21 | 7.5 | high |" in text
     assert "CWE-89 (1)" in text and "A03:2021 - Injection (1)" in text
-    assert "Secretos expuestos: **1**" in text
-    assert "| generic-api-key | .env:2 |" in text
-    assert "Hallazgos críticos: 1 CVE crítica(s)/alta(s) con corrección disponible; 1 secreto(s)" in text
-    # Quality excludes security linters.
-    assert "| ESLint | 1 | 1 |" in text and "| Prettier | 0 | 0 |" in text
-    assert "Trivy |" not in text.split("## Calidad del código")[1].split("## Seguridad")[0]
-    assert "src/app.ts" in text
-    # Plagiarism.
-    assert "1 de 10 archivo(s) con coincidencias (10.0%)" in text
-    assert "[lodash lodash 4.17.21](<https://github.com/lodash/lodash>)" in text
-    assert "similitud máxima 85% con Equipo Beta; 1 de 2 equipo(s) con archivos similares" in text
-    assert "**un solo commit con todo el código**" in text
-    assert "1 antes del inicio" in text
-    # Recommendations from the findings.
-    assert "Revocar y rotar los secretos" in text
-    assert "Actualizar las dependencias con CVE críticas/altas que ya tienen corrección: lodash." in text
+    # Quality: ESLint errors, Stylelint warnings only, Prettier clean -> 50/100, D.
+    assert "**D** (50/100): 3 linter(s), 1 clean, 1 with warnings only, 1 with errors" in text
+    assert "Trivy |" not in text.split("Code quality")[1].split("Responsible AI")[0]
+    assert "the project uses AI (providers: OpenAI)." in text
+    assert "| LLM01 Prompt injection | Fail | Reviewed. Evidence: src/app.ts:3. |" in text
+    assert "| F1 | responsible\\_ai | high | src/chat.ts:42 | User input concatenated to the prompt |" in text
 
 
 def test_report_never_contains_secret_values(tmp_path):
@@ -167,15 +277,77 @@ def test_report_without_results_says_what_is_missing(tmp_path):
     text = build_report(TEAM, EVENT, tmp_path, now=NOW)
     for heading in TEMPLATE_HEADINGS:
         assert heading in text
-    assert "Sin datos: falta `scc.json`; corre `acr scc equipo-01`." in text
-    assert "Sin datos: falta `trivy.sarif`; corre `acr megalinter equipo-01`." in text
-    assert "Sin datos: falta `scanoss.json`; corre `acr scanoss equipo-01`." in text
-    assert "Sin datos: falta `dolos/pairs.csv`; corre `acr dolos`." in text
-    assert "Sin datos: falta `git-signals.json`; corre `acr git-signals equipo-01`." in text
-    assert "Pendiente: revisión asistida con Claude Code (`review.json`, PB-13)." in text
-    assert "Pendiente: búsqueda web con Claude Code" in text
-    assert "ninguno en los resultados disponibles (faltan" in text
-    assert "Sin recomendaciones automáticas" in text
+    assert "- Checklist: 0 pass · 0 fail · 14 manual review" in text
+    assert "No data: `scc.json` is missing; run `acr scc equipo-01`." in text
+    assert "No data: `trivy.sarif` is missing; run `acr megalinter equipo-01`." in text
+    assert "No data: `scanoss.json` is missing; run `acr scanoss equipo-01`." in text
+    assert "No data: `dolos/pairs.csv` is missing; run `acr dolos`." in text
+    assert "No data: `git-signals.json` is missing; run `acr git-signals equipo-01`." in text
+    pending = "Pending assisted review. No data: `review.json` is missing; run `acr review-prompt equipo-01`."
+    assert pending in text
+    assert "Pending web search." in text
+    assert "missing results: `git-signals.json`, `megalinter.sarif`, `review.json`, `scc.json`" in text
+    assert "No automatic points with the available results." in text
+
+
+def test_invalid_review_files_are_not_used(tmp_path):
+    bad = review_data()
+    bad["official_checklist"] = bad["official_checklist"][:-1]  # 4.1 missing
+    write_json(tmp_path / "equipo-01" / "review.json", bad)
+    write_json(tmp_path / "equipo-01" / "web-plagiarism.json", {"schema_version": 1})
+    text = build_report(TEAM, EVENT, tmp_path, now=NOW)
+    assert "`review.json` has 1 validation error(s); fix it and run `acr review-validate equipo-01`." in text
+    assert "`web-plagiarism.json` has" in text
+    assert "Why did you split the API?" not in text
+    assert "| Manual review | Pending assisted review." in row(text, "2.1")
+
+
+def test_review_with_another_team_id_is_rejected(tmp_path):
+    write_json(tmp_path / "equipo-01" / "review.json", review_data("equipo-02"))
+    assert "review.json" in load_sources("equipo-01", tmp_path).invalid
+
+
+@pytest.mark.parametrize(
+    ("changes", "result", "text"),
+    [
+        ({"has_git": False}, "Manual review", "no git history"),
+        ({"single_commit": False, "commit_count": 5, "largest_commit_percent": 70.0},
+         "Manual review", "5 commits; the largest commit holds 70.0% of the added code (commit abcdef1"),
+        ({"single_commit": False, "commit_count": 5, "largest_commit_percent": 20.0}, "Pass", "holds 20.0%"),
+    ],
+)
+def test_commit_iteration_item(tmp_path, changes, result, text):
+    write_json(tmp_path / "equipo-01" / "git-signals.json", signals(**changes))
+    mark = checklist(load_sources("equipo-01", tmp_path), "equipo-01")["1.1"]
+    assert mark.result == result and text in mark.evidence
+
+
+def test_collaboration_item(tmp_path):
+    authors = [{"name": "Ana", "github": "ana", "member": True, "commits": 4},
+               {"name": "Luis", "github": None, "member": False, "commits": 1}]
+    base = {"author_count": 2, "single_author": False, "authors": authors}
+    path = tmp_path / "equipo-01" / "git-signals.json"
+
+    write_json(path, signals(**base))
+    mark = checklist(load_sources("equipo-01", tmp_path), "equipo-01")["1.2"]
+    assert mark.result == "Pass" and "ana (4), Luis (1)" in mark.evidence and "not listed" in mark.evidence
+
+    members = [{"name": "Ana", "github": "ana", "commits": 4}, {"name": "Eva", "github": "eva", "commits": 0}]
+    write_json(path, signals(**base, members=members, members_without_commits=["eva"], authors_not_members=1))
+    mark = checklist(load_sources("equipo-01", tmp_path), "equipo-01")["1.2"]
+    assert mark.result == "Manual review"
+    assert "1 author(s) are not listed as members. Members without commits: eva." in mark.evidence
+
+    write_json(path, signals(**base, members=members[:1]))
+    assert checklist(load_sources("equipo-01", tmp_path), "equipo-01")["1.2"].result == "Pass"
+
+
+def test_secrets_item_when_betterleaks_did_not_run_or_found_nothing(tmp_path):
+    path = tmp_path / "equipo-01" / "megalinter.sarif"
+    write_json(path, {"runs": [run("ESLint", [])]})
+    assert checklist(load_sources("equipo-01", tmp_path), "equipo-01")["4.3"].result == "Manual review"
+    write_json(path, {"runs": [run("Betterleaks", [])]})
+    assert checklist(load_sources("equipo-01", tmp_path), "equipo-01")["4.3"].result == "Pass"
 
 
 def test_report_handles_unreadable_results(tmp_path):
@@ -184,15 +356,8 @@ def test_report_handles_unreadable_results(tmp_path):
     (team / "scc.json").write_text("{not json", encoding="utf-8")
     (team / "megalinter.sarif").write_text("[]", encoding="utf-8")
     text = build_report(TEAM, EVENT, tmp_path, now=NOW)
-    assert "no se pudo leer `scc.json`" in text
-    assert "no se pudo leer `megalinter.sarif`" in text
-
-
-def test_report_mentions_assisted_review_files_when_present(tmp_path):
-    write_json(tmp_path / "equipo-01" / "review.json", {})
-    write_json(tmp_path / "equipo-01" / "web-plagiarism.json", {})
-    text = build_report(TEAM, EVENT, tmp_path, now=NOW)
-    assert "Ver `review.json`" in text and "ver `web-plagiarism.json`" in text
+    assert "`scc.json` could not be read" in text
+    assert "`megalinter.sarif` could not be read" in text
 
 
 def test_report_without_git_history_and_single_team_in_dolos(tmp_path):
@@ -200,8 +365,8 @@ def test_report_without_git_history_and_single_team_in_dolos(tmp_path):
     (tmp_path / "dolos").mkdir()
     (tmp_path / "dolos" / "pairs.csv").write_text("team_a,team_b,similarity\n", encoding="utf-8")
     text = build_report(TEAM, EVENT, tmp_path, now=NOW)
-    assert "no trae historial de git" in text
-    assert "no se comparó con Dolos" in text
+    assert "the submission has no git history" in text
+    assert "was not compared with Dolos" in text
 
 
 def test_untrusted_text_is_escaped(tmp_path):
@@ -210,10 +375,24 @@ def test_untrusted_text_is_escaped(tmp_path):
         "totals": {}, "matches": [{"path": "x|<img src=x>.js", "url": "javascript:alert(1)",
                                    "component": "c"}],
     })
+    data = review_data()
+    data["summary"] = "<img src=x onerror=alert(1)> [click](javascript:alert(1))"
+    data["judge_questions"][0]["question"] = "| injected | row |"
+    write_json(tmp_path / "equipo-01" / "review.json", data)
     text = build_report(team, EVENT, tmp_path, now=NOW)
     assert "<script>" not in text and "<img" not in text
     assert "&lt;script&gt;" in text and "A \\| B" in text
-    assert "](<javascript" not in text
+    assert "](<javascript" not in text and "](javascript" not in text
+    assert "\\| injected \\| row \\|" in text
+
+
+def test_quality_grade_bands():
+    assert quality_grade(9, 0, 10) == (90.0, "A")
+    assert quality_grade(8, 0, 10)[1] == "B"
+    assert quality_grade(6, 1, 10) == (65.0, "C")
+    assert quality_grade(5, 0, 10)[1] == "D"
+    assert quality_grade(0, 1, 10)[1] == "E"
+    assert quality_grade(0, 0, 0) == (0.0, "E")
 
 
 def test_md_and_link_helpers():
@@ -247,10 +426,25 @@ def test_write_report_and_invalid_id(tmp_path):
     full_reports(tmp_path)
     path = write_report(TEAM, EVENT, tmp_path, now=NOW)
     assert path == tmp_path / "equipo-01" / REPORT_FILE
-    assert path.read_text(encoding="utf-8").startswith("# Reporte de revisión – Equipo Alfa")
+    assert path.read_text(encoding="utf-8").startswith("# Code Review Report – Equipo Alfa")
     assert not (tmp_path / "equipo-01" / f".{REPORT_FILE}.tmp").exists()
     with pytest.raises(ReportError):
         build_report(Team("../x", "n", "p", "o", "r"), EVENT, tmp_path)
+
+
+def test_judge_questions_for_every_team(tmp_path):
+    full_reports(tmp_path)
+    other = Team("equipo-02", "Equipo Beta", "Proyecto Beta", "o", "r")
+    text = build_judge_questions([TEAM, other], EVENT, tmp_path, now=NOW)
+    assert text.startswith("# Questions for the judges – Hackathon 2026")
+    alfa, beta = text.split("## Equipo Alfa – Proyecto Alfa")[1].split("## Equipo Beta – Proyecto Beta")
+    assert "1. **2.3 Explaining the code:** Why did you split the API? (src/api.ts:10)" in alfa
+    assert "2. **4.2 Design and UX:** How do children navigate? (src/ui.tsx:5)" in alfa
+    assert "No data: `review.json` is missing; run `acr review-prompt equipo-02`." in beta
+    path = write_judge_questions([TEAM, other], EVENT, tmp_path, now=NOW)
+    assert path == tmp_path / JUDGE_QUESTIONS_FILE and path.read_text(encoding="utf-8") == text
+    with pytest.raises(ReportError):
+        build_judge_questions([Team("../x", "n", "p", "o", "r")], EVENT, tmp_path)
 
 
 # --- CLI -----------------------------------------------------------------------------------
@@ -276,9 +470,12 @@ def test_cli_report_all_and_one(tmp_path, monkeypatch, capsys):
     assert main(["--config", str(config), "report", "--dashboard-url", "http://localhost:3001"]) == EXIT_OK
     out = capsys.readouterr().out
     assert "equipo-01: reporte -> reports/equipo-01/reporte.md" in out
+    assert "Preguntas para el jurado -> reports/judge-questions.md" in out
     text = (tmp_path / "reports" / "equipo-01" / REPORT_FILE).read_text(encoding="utf-8")
-    assert "http://localhost:3001" in text and "con N equipo-02" in text
+    assert "http://localhost:3001" in text and "with N equipo-02" in text
     assert (tmp_path / "reports" / "equipo-02" / REPORT_FILE).is_file()
+    questions = (tmp_path / "reports" / JUDGE_QUESTIONS_FILE).read_text(encoding="utf-8")
+    assert "## N equipo-01 – P" in questions and "## N equipo-02 – P" in questions
     assert main(["--config", str(config), "report", "equipo-02"]) == EXIT_OK
 
 

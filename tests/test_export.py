@@ -154,7 +154,7 @@ def test_zip_has_reports_of_every_team_and_dolos_csv_only(tmp_path):
         "equipo-02/reporte.md",
         "equipo-02/reporte.pdf",
     ]
-    assert result.missing == ["dolos/file-pairs.csv"]
+    assert result.missing == ["judge-questions.md", "dolos/file-pairs.csv"]
     assert not (reports / f".{ZIP_FILE}.tmp").exists()
 
 
@@ -233,4 +233,4 @@ def test_cli_export_without_md_to_pdf_still_writes_markdown_and_zip(tmp_path, mo
     err = capsys.readouterr().err
     assert "equipo-01: error al exportar: md-to-pdf no está instalado" in err
     with zipfile.ZipFile(tmp_path / "reports" / ZIP_FILE) as archive:
-        assert archive.namelist() == ["equipo-01/reporte.md"]
+        assert archive.namelist() == ["equipo-01/reporte.md", "judge-questions.md"]

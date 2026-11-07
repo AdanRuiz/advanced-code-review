@@ -27,7 +27,7 @@ from acr.megalinter import (
     run_megalinter,
 )
 from acr.plagiarism import PLAGIARISM_FILE, PlagiarismError, write_plagiarism
-from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_report
+from acr.report import DEFAULT_DASHBOARD_URL, ReportError, write_judge_questions, write_report
 from acr.review import WEB_PLAGIARISM_FILE, ReviewError, render_prompt, validate_team
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
@@ -526,10 +526,22 @@ def _report(args: argparse.Namespace) -> int:
             print(f"{team.id}: error: {exc}", file=sys.stderr)
             continue
         print(f"{team.id}: reporte -> {path.as_posix()}")
+    questions_ok = _judge_questions(config, "acr report")
     if failed:
         print(f"acr report: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
         return EXIT_ERROR
-    return EXIT_OK
+    return EXIT_OK if questions_ok else EXIT_ERROR
+
+
+def _judge_questions(config: Config, command: str) -> bool:
+    """PB-59: reports/judge-questions.md with the questions of every team in equipos.yml."""
+    try:
+        path = write_judge_questions(config.equipos, config.evento, DEFAULT_REPORTS_DIR)
+    except (ReportError, OSError) as exc:
+        print(f"{command}: error al escribir las preguntas para el jurado: {exc}", file=sys.stderr)
+        return False
+    print(f"Preguntas para el jurado -> {path.as_posix()}")
+    return True
 
 
 def _write_exports(config: Config, teams: Sequence[Team], dashboard_url: str, command: str) -> bool:
@@ -545,6 +557,7 @@ def _write_exports(config: Config, teams: Sequence[Team], dashboard_url: str, co
             print(f"{team.id}: error al exportar: {exc}", file=sys.stderr)
             continue
         print(f"{team.id}: PDF -> {path.as_posix()}")
+    questions_ok = _judge_questions(config, command)
     try:
         result = write_zip([team.id for team in config.equipos], DEFAULT_REPORTS_DIR)
     except (ExportError, OSError) as exc:
@@ -555,7 +568,7 @@ def _write_exports(config: Config, teams: Sequence[Team], dashboard_url: str, co
         print(f"aviso: faltan en el ZIP: {', '.join(result.missing)}", file=sys.stderr)
     if failed:
         print(f"{command}: {failed} de {len(teams)} equipo(s) sin exportar", file=sys.stderr)
-    return not failed
+    return not failed and questions_ok
 
 
 def _export(args: argparse.Namespace) -> int:
@@ -763,9 +776,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     report = subparsers.add_parser(
         "report",
-        help="genera el reporte Markdown de cada equipo en reports/<id>/reporte.md",
-        description="Arma el reporte por equipo con la plantilla de la spec a partir de los "
-        "resultados que ya están en reports/. No vuelve a analizar ni muestra secretos.",
+        help="genera el reporte en inglés de cada equipo (reports/<id>/reporte.md) y "
+        "reports/judge-questions.md",
+        description="Arma el reporte por equipo en inglés con la plantilla de la spec (checklist "
+        "oficial, evidencia de plagio, preguntas para el jurado, feedback y anexo técnico) a partir "
+        "de los resultados que ya están en reports/, y reports/judge-questions.md con las preguntas "
+        "de todos los equipos. No vuelve a analizar ni muestra secretos.",
     )
     report.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
     report.add_argument(
