@@ -63,7 +63,7 @@ python -m acr security               # datos de la página Seguridad en reports/
 python -m acr plagiarism             # datos de la página Plagio en reports/plagiarism.json (PB-22)
 python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la revisión asistida (PB-13)
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
-python -m acr report [ID]            # reporte Markdown por equipo en reports/<id>/reporte.md (PB-14)
+python -m acr report [ID]            # reporte en inglés en reports/<id>/reporte.md y reports/judge-questions.md (PB-14, PB-59)
 python -m acr export [ID]            # reporte.md y reporte.pdf por equipo y reports/todos.zip (PB-23)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
@@ -184,21 +184,30 @@ La revisión asistida la hace el revisor con Claude Code (suscripción propia), 
    - `reports/<id>/web-plagiarism.json` ([esquema](acr/schemas/web-plagiarism.schema.json)): `keywords`, `queries` (búsqueda y fuente) y `matches` con `title`, `url`, `source` (`github`, `devpost`, `hackathon_gallery`, `product_hunt`, `tutorial`, `other`), `published` (`AAAA-MM-DD` o `null`), `before_event`, `similarity` (`idea`, `structure`, `text`) y `evidence`.
 3. `acr review-validate [<id>]` revisa ambos archivos contra su esquema JSON y además: cada punto del checklist oficial y de las checklists de IA exactamente una vez, `id` de hallazgos sin repetir, rutas relativas dentro del repositorio, `team_id` igual a la carpeta, fechas válidas (`generated_at` con zona horaria) y que **ningún campo contenga un secreto en claro** (claves privadas, claves de AWS o Google, tokens de GitHub o Slack, API keys `sk-…`, JWT); el mensaje de error nunca repite el valor. Lista todos los errores y sale con código 1 si falta un archivo o alguno es inválido.
 
-`acr report` arma `reports/<id>/reporte.md` con la plantilla de [Entregables](SPEC.md#entregables) a partir de los resultados que ya estén en `reports/` (no vuelve a analizar):
+`acr report` (PB-14, PB-59) arma `reports/<id>/reporte.md` **en inglés** con la plantilla de [Entregables](SPEC.md#entregables) a partir de los resultados que ya estén en `reports/` (no vuelve a analizar):
 
-- **Resumen:** lenguajes y tamaño (`scc.json`), enlace al dashboard (`--dashboard-url`, `http://localhost:3000` por defecto) y hallazgos críticos (CVE críticas/altas con corrección, secretos y hallazgos de Semgrep de nivel error).
-- **Calidad:** errores y advertencias por linter de calidad y archivos con más hallazgos, desde `megalinter.sarif`.
-- **Seguridad:** CVE de `trivy.sarif` (el indicador principal cuenta solo críticas/altas con versión corregida), patrones inseguros de `semgrep.sarif` por CWE y OWASP Top 10, y secretos de Betterleaks **solo con tipo, archivo y línea, nunca el valor**.
-- **Plagio:** coincidencias de `scanoss.json`, pares de `reports/dolos/pairs.csv` con este equipo y señales de `git-signals.json`.
-- **Recomendaciones:** derivadas de los hallazgos anteriores.
+- **Summary:** lenguajes y tamaño (`scc.json`), objetivo, totales del checklist (*pass · fail · manual review*) y hallazgos clave (puntos que no cumplen, CVE críticas/altas con corrección, resumen de `review.json`, resultados que faltan). El encabezado enlaza al dashboard (`--dashboard-url`, `http://localhost:3000` por defecto).
+- **Official checklist:** tabla con los 14 puntos (1.1 a 4.3) marcados *Pass*, *Fail* o *Manual review* con su evidencia (`archivo:línea`):
+  - 1.1 (`git-signals.json`): un solo commit → *Fail*; el commit más grande con 50 % o más de las líneas agregadas → *Manual review* (carga masiva a explicar); si no, *Pass*.
+  - 1.2 (`git-signals.json`): un solo autor → *Fail*; integrantes de `equipos.yml` sin commits → *Manual review*; si no, *Pass*. Lista autores y commits por autor.
+  - 4.3 (Betterleaks en `megalinter.sarif`): secretos → *Fail*, **solo con tipo, archivo y línea, nunca el valor**; sin secretos → *Pass*; si Betterleaks no corrió → *Manual review*.
+  - 2.3 y 4.2: siempre *Manual review* (requieren entrevista o demo).
+  - 1.3, 2.1, 2.2, 2.4, 3.1–3.4 y 4.1: la marca y la evidencia de `review.json`; 3.4 y 4.1 agregan lo que dice del PDF de prompts y de la presentación. Sin `review.json` válido quedan en *Manual review*.
+- **Plagiarism and originality evidence:** coincidencias de `scanoss.json` (con columna *Cited* según la clasificación de `external_code` de `review.json`), pares de `reports/dolos/pairs.csv`, proyectos de `web-plagiarism.json` (enlace, fecha, si es anterior al evento, nivel), historial de git (commits antes/después del sprint, commit único, autores, fork) y clasificación de plantillas, generadores y código de terceros.
+- **Questions for the judges:** las de `review.json`, con tema y `archivo:línea`.
+- **Reviewer feedback:** lo escribe el revisor; el reporte deja puntos borrador derivados de los hallazgos.
+- **Technical annex (formative, not scored):** CVE de `trivy.sarif`, patrones inseguros de `semgrep.sarif` por CWE y OWASP Top 10, nota de calidad A–E de MegaLinter (fórmula de la página Calificación: linters sin hallazgos + 0.5 × linters solo con advertencias, sobre el total), checklist de IA responsable y OWASP LLM de `review.json`, y los demás hallazgos de la revisión asistida.
 
-Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. La revisión asistida y la búsqueda web (`review.json`, `web-plagiarism.json`) quedan como pendientes: el reporte todavía no lee el formato que define PB-13. El texto que viene de los repositorios (rutas, reglas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
+Además escribe `reports/judge-questions.md` con las preguntas para el jurado de **todos** los equipos de `equipos.yml`.
+
+Toda marca automática es un borrador que valida el revisor. `review.json` y `web-plagiarism.json` solo se usan si pasan `acr review-validate`; si no, el reporte dice cuántos errores tienen. Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. El texto que viene de los repositorios o de la revisión asistida (rutas, reglas, notas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
 
 `acr export [ID]` (también al final de `acr analyze`) genera las descargas de los botones del dashboard (PB-23, [Exportación de reportes](SPEC.md#exportación-de-reportes)):
 
 - `reports/<id>/reporte.md`: se regenera como en `acr report`.
 - `reports/<id>/reporte.pdf`: el Markdown convertido con [md-to-pdf](https://github.com/simonhaenisch/md-to-pdf) (requiere md-to-pdf en el `PATH`, PB-1). md-to-pdf levanta un servidor HTTP local con su carpeta base mientras convierte; por eso corre sobre una copia del reporte en una carpeta temporal vacía y nunca ve `reports/` ni el código de los equipos.
-- `reports/todos.zip`: `reporte.md` y `reporte.pdf` de **todos** los equipos de `equipos.yml` (aunque se pase un `ID`) y los CSV de Dolos (`dolos/pairs.csv`, `dolos/file-pairs.csv`). No incluye SARIF, bitácoras ni otros archivos de `reports/`; lo que falte se avisa.
+- `reports/judge-questions.md`: se regenera como en `acr report`.
+- `reports/todos.zip`: `reporte.md` y `reporte.pdf` de **todos** los equipos de `equipos.yml` (aunque se pase un `ID`), `judge-questions.md` y los CSV de Dolos (`dolos/pairs.csv`, `dolos/file-pairs.csv`). No incluye SARIF, bitácoras ni otros archivos de `reports/`; lo que falte se avisa.
 
 Cada archivo se escribe aparte y reemplaza al anterior solo al terminar: si md-to-pdf falla o no está instalado, se conserva el PDF anterior, el Markdown y el ZIP se escriben igual y el comando sale con código 1.
 

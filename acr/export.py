@@ -4,7 +4,8 @@ Grafana's built-in PDF export is paid, so the pipeline writes the files beforeha
 buttons only download them from the local file server:
 
 - ``reports/<id>/reporte.pdf``: ``reports/<id>/reporte.md`` (PB-14) converted with md-to-pdf.
-- ``reports/todos.zip``: ``reporte.md`` and ``reporte.pdf`` of every team plus the Dolos CSV.
+- ``reports/todos.zip``: ``reporte.md`` and ``reporte.pdf`` of every team, ``judge-questions.md``
+  (PB-59) and the Dolos CSV.
 
 md-to-pdf renders the Markdown in a headless browser and serves its ``--basedir`` over a local
 HTTP server while it converts. It is run on a copy of the Markdown in an empty temporary folder,
@@ -27,7 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from acr.config import is_valid_team_id
-from acr.report import DEFAULT_REPORTS_DIR, REPORT_FILE
+from acr.report import DEFAULT_REPORTS_DIR, JUDGE_QUESTIONS_FILE, REPORT_FILE
 
 PDF_FILE = "reporte.pdf"
 ZIP_FILE = "todos.zip"
@@ -114,7 +115,7 @@ def write_zip(team_ids: Iterable[str], reports_dir: Path = DEFAULT_REPORTS_DIR) 
         if not is_valid_team_id(team_id):
             raise ExportError(f"id inválido ({team_id!r})")
         wanted += [f"{team_id}/{REPORT_FILE}", f"{team_id}/{PDF_FILE}"]
-    wanted += list(DOLOS_FILES)
+    wanted += [JUDGE_QUESTIONS_FILE, *DOLOS_FILES]
 
     reports_dir.mkdir(parents=True, exist_ok=True)
     target = reports_dir / ZIP_FILE

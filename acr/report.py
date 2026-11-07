@@ -1,19 +1,26 @@
-"""Markdown report per team (PB-14, SPEC.md "Entregables").
+"""Team report in English following the official checklist (PB-14, PB-59, SPEC.md "Entregables").
 
-Builds ``reports/<id>/reporte.md`` with the template of SPEC.md "Entregables" from every result
-available in ``reports/``:
+Builds ``reports/<id>/reporte.md`` with the English template of SPEC.md "Entregables" from every
+result available in ``reports/``, and ``reports/judge-questions.md`` with the questions for the
+judges of every team:
 
-- ``scc.json`` (PB-8): languages and size.
-- ``megalinter.sarif`` (PB-9): findings per quality linter; Betterleaks run for secrets.
-- ``trivy.sarif`` and ``semgrep.sarif`` (PB-9): CVE of dependencies and insecure code.
-- ``scanoss.json`` (PB-10), ``dolos/pairs.csv`` (PB-11) and ``git-signals.json`` (PB-7).
-- ``review.json`` and ``web-plagiarism.json`` (assisted review): their format arrives with PB-13,
-  so for now the report only says whether they exist.
+- Summary: languages and size (``scc.json``), checklist totals and key findings.
+- Official checklist: items 1.1 to 4.3 marked Pass / Fail / Manual review with their evidence.
+  1.1 and 1.2 come from ``git-signals.json`` (PB-57), 4.3 from Betterleaks (``megalinter.sarif``),
+  2.3 and 4.2 are always manual review, and the rest from ``review.json`` (PB-58).
+- Plagiarism and originality evidence: ``scanoss.json``, ``dolos/pairs.csv``,
+  ``web-plagiarism.json``, ``git-signals.json`` and the external code classification of
+  ``review.json``.
+- Questions for the judges (``review.json``), Reviewer feedback (written by the reviewer, with
+  draft points) and a technical annex that is not scored: CVE (``trivy.sarif``), insecure code
+  (``semgrep.sarif``), code quality grade A–E (``megalinter.sarif``) and responsible AI.
 
-A missing or unreadable result never stops the report: its section says which file is missing
-and which command creates it. Detected secrets are never written: only their rule, file and
-line (AGENTS.md, invariant 6). Text from the team's repository (paths, rule ids, URLs) is
-escaped so it cannot inject Markdown or HTML into the report or its PDF.
+Every automatic mark is a draft the reviewer validates. ``review.json`` and
+``web-plagiarism.json`` are used only when they pass ``acr review-validate``. A missing or
+unreadable result never stops the report: its section says which file is missing and which
+command creates it. Detected secrets are never written: only their rule, file and line
+(AGENTS.md, invariant 6). Text from the team's repository or the assisted review (paths, rule
+ids, URLs, notes) is escaped so it cannot inject Markdown or HTML into the report or its PDF.
 """
 
 from __future__ import annotations
@@ -22,34 +29,102 @@ import csv
 import json
 import re
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from acr.config import Event, Team, is_valid_team_id
+from acr.review import (
+    OFFICIAL_CHECKLIST,
+    REVIEW_FILE,
+    WEB_PLAGIARISM_FILE,
+    validate_review,
+    validate_web_plagiarism,
+)
 
 DEFAULT_REPORTS_DIR = Path("reports")
 DEFAULT_DASHBOARD_URL = "http://localhost:3000"
 REPORT_FILE = "reporte.md"
+JUDGE_QUESTIONS_FILE = "judge-questions.md"
 MAX_ROWS = 20
+MAX_EVIDENCE = 5
+# Point 1.1: a commit with at least this % of the added code is a bulk upload to explain.
+BULK_COMMIT_PERCENT = 50.0
 
 # MegaLinter runs the linters on the repository mounted here (acr.megalinter.WORKSPACE).
 _WORKSPACE_PREFIXES = ("/tmp/lint/", "tmp/lint/")
 _SECRET_TOOLS = ("betterleaks", "gitleaks")
 _SECURITY_TOOLS = (*_SECRET_TOOLS, "trivy", "semgrep")
 _SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW", "UNKNOWN")
-_SEVERITY_ES = {
-    "CRITICAL": "crítica",
-    "HIGH": "alta",
-    "MEDIUM": "media",
-    "LOW": "baja",
-    "UNKNOWN": "desconocida",
-}
 _CWE_RE = re.compile(r"\bCWE-\d+\b")
 _OWASP_RE = re.compile(r"\bA\d{2}:\d{4}\b(?:\s*-\s*[^,;\]]+)?")
 _MD_SPECIAL = re.compile(r"([\\`*_{}\[\]()#+!|~])")
+
+# SPEC.md "Checklist oficial de code review": every item, in order, in English.
+CHECKLIST_ITEMS: dict[str, str] = {
+    "1.1": "Commits show meaningful iteration, with no unexplained bulk uploads",
+    "1.2": "Evidence of team collaboration",
+    "1.3": OFFICIAL_CHECKLIST["1.3"],
+    "2.1": OFFICIAL_CHECKLIST["2.1"],
+    "2.2": OFFICIAL_CHECKLIST["2.2"],
+    "2.3": "Team members can explain their code and decisions",
+    "2.4": OFFICIAL_CHECKLIST["2.4"],
+    "3.1": OFFICIAL_CHECKLIST["3.1"],
+    "3.2": OFFICIAL_CHECKLIST["3.2"],
+    "3.3": OFFICIAL_CHECKLIST["3.3"],
+    "3.4": OFFICIAL_CHECKLIST["3.4"],
+    "4.1": OFFICIAL_CHECKLIST["4.1"],
+    "4.2": "Design and UX consider the user",
+    "4.3": "No API keys, secrets, credentials or private data in the repository",
+}
+PASS, FAIL, MANUAL = "Pass", "Fail", "Manual review"
+_RESULTS = {"pass": PASS, "fail": FAIL, "manual_review": MANUAL}
+
+JUDGE_TOPICS: dict[str, str] = {
+    "2.3": "2.3 Explaining the code",
+    "4.1": "4.1 Code vs demo",
+    "4.2": "4.2 Design and UX",
+    "purpose": "AI purpose",
+    "autonomy": "AI autonomy",
+    "privacy": "Privacy",
+    "bias_and_limits": "Bias and limits",
+    "accessibility": "Accessibility",
+    "human_support": "Human support",
+}
+EXTERNAL_ORIGINS: dict[str, str] = {
+    "official_template": "Official template (allowed)",
+    "generator": "Project generator (to review)",
+    "third_party_cited": "Third-party, cited (allowed)",
+    "third_party_uncited": "Third-party, not cited (item 2.4)",
+    "ai_declared": "AI-generated, declared (allowed)",
+    "ai_undeclared": "AI-generated, not declared (item 3.4)",
+}
+DOCUMENT_STATUS = {
+    "read": "read",
+    "not_provided": "not provided",
+    "url_only": "only a URL, PDF pending",
+    "unreadable": "could not be read",
+}
+AI_CHECKS: dict[str, str] = {
+    "data_sent_to_provider": "User data (minors) sent to the AI provider",
+    "data_retention": "Conversations or personal data stored (where, how long)",
+    "api_keys_outside_code": "API keys outside the code (environment variables)",
+    "input_output_filtering": "Input and output filtering or moderation",
+    "failure_handling": "Handling of AI failures, delays or inappropriate answers",
+    "ai_disclosure": "Users know they are talking to an AI",
+    "adult_supervision": "Adult supervision (parent, teacher)",
+    "system_prompts_reviewable": "System prompts in the code and reviewable",
+}
+OWASP_LLM_RISKS: dict[str, str] = {
+    "LLM01": "LLM01 Prompt injection",
+    "LLM02": "LLM02 Sensitive information disclosure",
+    "LLM05": "LLM05 Improper output handling",
+    "LLM06": "LLM06 Excessive agency",
+    "LLM10": "LLM10 Unbounded consumption",
+}
+CHECK_STATUS = {"pass": "Pass", "fail": "Fail", "not_applicable": "N/A", "unknown": "Unknown"}
 
 
 class ReportError(Exception):
@@ -84,22 +159,32 @@ def percent(value: float) -> str:
     return f"{value:.0%}"
 
 
+def _yes_no(value: Any) -> str:
+    return "Yes" if value is True else "No" if value is False else "Unknown"
+
+
 # --------------------------------------------------------------------------- loading results
 
 
 @dataclass
 class Sources:
-    """Results read from ``reports/``; ``missing`` and ``unreadable`` list file names."""
+    """Results read from ``reports/``; ``missing``, ``unreadable`` and ``invalid`` list file names."""
 
     data: dict[str, Any] = field(default_factory=dict)
     missing: set[str] = field(default_factory=set)
     unreadable: set[str] = field(default_factory=set)
+    invalid: dict[str, int] = field(default_factory=dict)
 
     def note(self, name: str, command: str) -> str:
         """Why a section has no data, and how to get it."""
+        if name in self.invalid:
+            return (
+                f"No data: `{name}` has {self.invalid[name]} validation error(s); "
+                f"fix it and run `{command}`."
+            )
         if name in self.unreadable:
-            return f"Sin datos: no se pudo leer `{name}`; vuelve a correr `{command}`."
-        return f"Sin datos: falta `{name}`; corre `{command}`."
+            return f"No data: `{name}` could not be read; run `{command}` again."
+        return f"No data: `{name}` is missing; run `{command}`."
 
 
 def _read_json(path: Path, sources: Sources, key: str) -> None:
@@ -128,6 +213,19 @@ def _read_pairs(path: Path, sources: Sources, key: str) -> None:
         sources.unreadable.add(key)
 
 
+def _read_validated(
+    path: Path, sources: Sources, key: str, team_id: str, validate: Callable[..., list[str]]
+) -> None:
+    """The assisted review files are used only when they pass ``acr review-validate``."""
+    _read_json(path, sources, key)
+    if key not in sources.data:
+        return
+    errors = validate(sources.data[key], team_id)
+    if errors:
+        del sources.data[key]
+        sources.invalid[key] = len(errors)
+
+
 def load_sources(team_id: str, reports_dir: Path) -> Sources:
     sources = Sources()
     team_dir = reports_dir / team_id
@@ -141,11 +239,10 @@ def load_sources(team_id: str, reports_dir: Path) -> Sources:
     ):
         _read_json(team_dir / name, sources, name)
     _read_pairs(reports_dir / "dolos" / "pairs.csv", sources, "dolos/pairs.csv")
-    for name in ("review.json", "web-plagiarism.json"):
-        if (team_dir / name).is_file():
-            sources.data[name] = True
-        else:
-            sources.missing.add(name)
+    _read_validated(team_dir / REVIEW_FILE, sources, REVIEW_FILE, team_id, validate_review)
+    _read_validated(
+        team_dir / WEB_PLAGIARISM_FILE, sources, WEB_PLAGIARISM_FILE, team_id, validate_web_plagiarism
+    )
     return sources
 
 
@@ -295,26 +392,150 @@ def weakness_tags(finding: Finding) -> tuple[list[str], list[str]]:
     return cwe, owasp
 
 
+# --------------------------------------------------------------------------- checklist
+
+
+@dataclass(frozen=True)
+class Mark:
+    """The proposed result of one checklist item and its evidence (already escaped Markdown)."""
+
+    result: str
+    evidence: str
+
+
+def _locations(items: Any) -> str:
+    places = [
+        md(f"{loc.get('file')}:{loc.get('line')}") for loc in map(_dict, _list(items)) if loc.get("file")
+    ]
+    if not places:
+        return ""
+    extra = f" (+{len(places) - MAX_EVIDENCE} more)" if len(places) > MAX_EVIDENCE else ""
+    return " Evidence: " + ", ".join(places[:MAX_EVIDENCE]) + extra + "."
+
+
+def _mark_commits(sources: Sources, team_id: str) -> Mark:
+    """1.1: number of commits and share of the added code in the largest one (git signals)."""
+    signals = sources.data.get("git-signals.json")
+    if signals is None:
+        return Mark(MANUAL, sources.note("git-signals.json", f"acr git-signals {team_id}"))
+    if not signals.get("has_git"):
+        return Mark(MANUAL, "The submission has no git history (folder or ZIP without `.git`).")
+    count = signals.get("commit_count") or 0
+    if not count:
+        return Mark(MANUAL, "The repository has no commits.")
+    largest = _dict(signals.get("largest_commit"))
+    share = signals.get("largest_commit_percent")
+    where = ""
+    if largest.get("hash"):
+        where = f" (commit {md(str(largest['hash'])[:7])}, {md(largest.get('author_date', '—'))})"
+    if signals.get("single_commit"):
+        return Mark(FAIL, f"A single commit holds all the code{where}.")
+    if share is None:
+        return Mark(MANUAL, f"{count} commits, but no lines of code were added.")
+    text = f"{count} commits; the largest commit holds {share}% of the added code{where}."
+    if share >= BULK_COMMIT_PERCENT:
+        return Mark(MANUAL, f"{text} Check whether this bulk upload is explained.")
+    return Mark(PASS, text)
+
+
+def _mark_collaboration(sources: Sources, team_id: str) -> Mark:
+    """1.2: distinct authors and commits per author, compared with ``integrantes``."""
+    signals = sources.data.get("git-signals.json")
+    if signals is None:
+        return Mark(MANUAL, sources.note("git-signals.json", f"acr git-signals {team_id}"))
+    if not signals.get("has_git") or not signals.get("author_count"):
+        return Mark(MANUAL, "No commit authors to compare (no git history or no commits).")
+    authors = [_dict(a) for a in _list(signals.get("authors"))]
+    listed = ", ".join(
+        f"{md(a.get('github') or a.get('name') or '—')} ({a.get('commits', 0)})" for a in authors[:MAX_ROWS]
+    )
+    text = f"{signals['author_count']} author(s), commits per author: {listed}."
+    if signals.get("single_author"):
+        return Mark(FAIL, f"{text} A single author is an alert: teams have 2 or more members.")
+    if signals.get("members") is None:
+        return Mark(PASS, f"{text} `integrantes` is not listed in `equipos.yml`; authors not matched.")
+    without = [md(login) for login in _list(signals.get("members_without_commits"))]
+    outsiders = signals.get("authors_not_members") or 0
+    if outsiders:
+        text += f" {outsiders} author(s) are not listed as members."
+    if without:
+        return Mark(MANUAL, f"{text} Members without commits: {', '.join(without)}.")
+    return Mark(PASS, f"{text} Every member has commits.")
+
+
+def _mark_secrets(sources: Sources, team_id: str) -> Mark:
+    """4.3: Betterleaks findings (git history included); never the value."""
+    sarif = sources.data.get("megalinter.sarif")
+    if sarif is None:
+        return Mark(MANUAL, sources.note("megalinter.sarif", f"acr megalinter {team_id}"))
+    if not any(_is_tool(name, _SECRET_TOOLS) for name in sarif_tools(sarif)):
+        return Mark(MANUAL, "Betterleaks did not run in MegaLinter; check for secrets manually.")
+    secrets = _secrets(sources) or []
+    if not secrets:
+        return Mark(PASS, "Betterleaks found no secrets in the code or the git history.")
+    places = ", ".join(f"{md(s.rule)} at {md(s.where)}" for s in secrets[:MAX_EVIDENCE])
+    extra = f" (+{len(secrets) - MAX_EVIDENCE} more)" if len(secrets) > MAX_EVIDENCE else ""
+    return Mark(FAIL, f"{len(secrets)} secret(s) found by Betterleaks (values hidden): {places}{extra}.")
+
+
+def _document_note(review: dict[str, Any], key: str, label: str) -> str:
+    document = _dict(_dict(review.get("documents")).get(key))
+    if not document:
+        return ""
+    status = DOCUMENT_STATUS.get(str(document.get("status")), md(document.get("status")))
+    return f" {label}: {status}; {md(document.get('notes', ''))}"
+
+
+def _pending_review(sources: Sources, team_id: str) -> str:
+    """Why ``review.json`` is not used: missing (run review-prompt) or invalid (review-validate)."""
+    command = "acr review-validate" if REVIEW_FILE in sources.invalid else "acr review-prompt"
+    return "Pending assisted review. " + sources.note(REVIEW_FILE, f"{command} {team_id}")
+
+
+def _review_marks(sources: Sources, team_id: str) -> dict[str, Mark]:
+    review = sources.data.get(REVIEW_FILE)
+    if review is None:
+        return {item: Mark(MANUAL, _pending_review(sources, team_id)) for item in OFFICIAL_CHECKLIST}
+    marks = {}
+    for item in map(_dict, _list(review.get("official_checklist"))):
+        evidence = md(item.get("notes", "")) + _locations(item.get("evidence"))
+        marks[str(item.get("id"))] = Mark(_RESULTS.get(str(item.get("result")), MANUAL), evidence)
+    documents = (("3.4", "prompts_pdf", "AI prompts PDF"), ("4.1", "presentation", "Presentation"))
+    for item_id, key, label in documents:
+        if item_id in marks:
+            extra = _document_note(review, key, label)
+            marks[item_id] = Mark(marks[item_id].result, marks[item_id].evidence + extra)
+    if "2.4" in marks:
+        marks["2.4"] = Mark(
+            marks["2.4"].result, marks["2.4"].evidence + " See *Plagiarism and originality evidence*."
+        )
+    return marks
+
+
+def checklist(sources: Sources, team_id: str) -> dict[str, Mark]:
+    """Proposed result of items 1.1 to 4.3, in the order of the official checklist."""
+    marks = _review_marks(sources, team_id)
+    marks["1.1"] = _mark_commits(sources, team_id)
+    marks["1.2"] = _mark_collaboration(sources, team_id)
+    marks["4.3"] = _mark_secrets(sources, team_id)
+    for item in ("2.3", "4.2"):
+        marks[item] = Mark(
+            MANUAL, "Requires an interview or the demo; see *Questions for the judges*."
+        )
+    return {item: marks.get(item, Mark(MANUAL, "No evidence.")) for item in CHECKLIST_ITEMS}
+
+
 # --------------------------------------------------------------------------- sections
 
 
-def _languages(sources: Sources, team_id: str) -> tuple[str, list[str]]:
+def _languages(sources: Sources, team_id: str) -> str:
     scc = sources.data.get("scc.json")
     if scc is None:
-        return sources.note("scc.json", f"acr scc {team_id}"), []
+        return sources.note("scc.json", f"acr scc {team_id}")
     totals = _dict(scc.get("totals"))
     languages = [_dict(lang) for lang in _list(scc.get("languages"))]
-    names = ", ".join(md(lang.get("name")) for lang in languages[:5]) or "ninguno reconocido"
-    summary = (
-        f"{names}; {totals.get('code', 0)} líneas de código en {totals.get('files', 0)} archivo(s)"
-    )
-    rows = [
-        [md(lang.get("name")), str(lang.get("files", 0)), str(lang.get("code", 0)),
-         str(lang.get("comment", 0)), str(lang.get("complexity", 0))]
-        for lang in languages
-    ]
-    lines = table(["Lenguaje", "Archivos", "Código", "Comentarios", "Complejidad"], rows) if rows else []
-    return summary, lines
+    names = ", ".join(md(lang.get("name")) for lang in languages[:5]) or "none recognized"
+    return f"{names}; {totals.get('code', 0)} lines of code in {totals.get('files', 0)} file(s)"
 
 
 def _secrets(sources: Sources) -> list[Finding] | None:
@@ -324,120 +545,163 @@ def _secrets(sources: Sources) -> list[Finding] | None:
     return [f for f in sarif_findings(sarif) if _is_tool(f.tool, _SECRET_TOOLS)]
 
 
+def quality_grade(clean: int, warnings_only: int, total: int) -> tuple[float, str]:
+    """SPEC.md "6. Calificación": 100 × (clean + 0.5 × non-blocking) / total, A ≥ 90 … E < 50."""
+    score = 100 * (clean + 0.5 * warnings_only) / total if total else 0.0
+    for limit, grade in ((90, "A"), (80, "B"), (65, "C"), (50, "D")):
+        if score >= limit:
+            return score, grade
+    return score, "E"
+
+
 def _quality(sources: Sources, team_id: str) -> list[str]:
     sarif = sources.data.get("megalinter.sarif")
     if sarif is None:
-        return [sources.note("megalinter.sarif", f"acr megalinter {team_id}")]
-    tools = [name for name in sarif_tools(sarif) if not _is_tool(name, _SECURITY_TOOLS)]
-    findings = [f for f in sarif_findings(sarif) if not _is_tool(f.tool, _SECURITY_TOOLS)]
+        return ["- Code quality (MegaLinter grade A–E): " + sources.note(
+            "megalinter.sarif", f"acr megalinter {team_id}")]
+    tools = sorted({name for name in sarif_tools(sarif) if not _is_tool(name, _SECURITY_TOOLS)})
     if not tools:
-        return ["MegaLinter no corrió linters de calidad para los lenguajes de este repositorio."]
+        return ["- Code quality (MegaLinter grade A–E): MegaLinter ran no quality linters for "
+                "the languages of this repository."]
+    findings = [f for f in sarif_findings(sarif) if not _is_tool(f.tool, _SECURITY_TOOLS)]
     errors = Counter(f.tool for f in findings if f.level == "error")
     others = Counter(f.tool for f in findings if f.level != "error")
     clean = [name for name in tools if not errors[name] and not others[name]]
+    warnings_only = [name for name in tools if not errors[name] and others[name]]
+    score, grade = quality_grade(len(clean), len(warnings_only), len(tools))
     lines = [
-        f"- Linters de calidad: {len(tools)}; sin hallazgos: {len(clean)}; "
-        f"con errores: {sum(1 for name in tools if errors[name])}.",
-        f"- Hallazgos: {sum(errors.values())} error(es) y {sum(others.values())} advertencia(s) o aviso(s).",
+        f"- Code quality (MegaLinter grade A–E): **{grade}** ({score:.0f}/100): {len(tools)} "
+        f"linter(s), {len(clean)} clean, {len(warnings_only)} with warnings only, "
+        f"{len(tools) - len(clean) - len(warnings_only)} with errors; "
+        f"{sum(errors.values())} error(s) and {sum(others.values())} warning(s) in total.",
         "",
     ]
-    ordered = sorted(set(tools), key=lambda name: (-errors[name], -others[name], name.lower()))
+    ordered = sorted(tools, key=lambda name: (-errors[name], -others[name], name.lower()))
     lines += table(
-        ["Linter", "Errores", "Advertencias"],
+        ["Linter", "Errors", "Warnings"],
         ([md(name), str(errors[name]), str(others[name])] for name in ordered),
     )
     files = Counter(f.path for f in findings)
     if files:
-        lines += ["", "Archivos con más hallazgos:", ""]
-        lines += table(["Archivo", "Hallazgos"], ([md(p), str(n)] for p, n in files.most_common(10)))
-    lines += ["", "Detalle completo en `megalinter.md` y en la página Calidad del dashboard."]
+        lines += ["", "Files with the most findings:", ""]
+        lines += table(["File", "Findings"], ([md(p), str(n)] for p, n in files.most_common(10)))
     return lines
 
 
-def _security(sources: Sources, team_id: str) -> tuple[list[str], dict[str, Any]]:
-    facts: dict[str, Any] = {}
-    lines = []
-    # Dependencies (Trivy)
+def _dependencies(sources: Sources, team_id: str) -> tuple[list[str], list[Vulnerability]]:
     trivy = sources.data.get("trivy.sarif")
+    label = "- Dependencies with known vulnerabilities (CVE, fixed version): "
     if trivy is None:
-        lines.append("- CVE críticas/altas con corrección disponible: " + sources.note(
-            "trivy.sarif", f"acr megalinter {team_id}"))
-        cve_lines: list[str] = []
-    else:
-        vulns = vulnerabilities(trivy)
-        fixable = fixable_critical(vulns)
-        facts["vulns"], facts["fixable"] = vulns, fixable
-        by_severity = Counter(v.severity for v in vulns)
-        breakdown = ", ".join(
-            f"{by_severity[s]} {_SEVERITY_ES[s]}" for s in _SEVERITIES if by_severity[s]
-        ) or "ninguna"
-        lines.append(
-            f"- CVE críticas/altas con corrección disponible: **{len(fixable)}** "
-            f"(total de CVE en dependencias: {len(vulns)}; {breakdown})"
-        )
-        cve_lines = []
-        if fixable:
-            cve_lines = ["", "CVE críticas/altas con corrección disponible:", ""]
-            cve_lines += table(
-                ["CVE", "Paquete", "Instalada", "Corregida", "CVSS", "Severidad"],
-                (
-                    [md(v.cve), md(v.package), md(v.installed), md(v.fixed),
-                     f"{v.cvss:.1f}" if v.cvss is not None else "—", _SEVERITY_ES[v.severity]]
-                    for v in fixable[:MAX_ROWS]
-                ),
-            )
-            if len(fixable) > MAX_ROWS:
-                cve_lines.append(f"\n… y {len(fixable) - MAX_ROWS} más en `trivy.sarif`.")
+        return [label + sources.note("trivy.sarif", f"acr megalinter {team_id}")], []
+    vulns = vulnerabilities(trivy)
+    fixable = fixable_critical(vulns)
+    by_severity = Counter(v.severity for v in vulns)
+    breakdown = ", ".join(f"{by_severity[s]} {s.lower()}" for s in _SEVERITIES if by_severity[s]) or "none"
+    lines = [
+        f"{label}**{len(fixable)}** critical/high CVE with a fix available "
+        f"({len(vulns)} CVE in {len({v.package for v in vulns})} package(s): {breakdown})."
+    ]
+    if fixable:
+        lines += ["", *table(
+            ["CVE", "Package", "Installed", "Fixed", "CVSS", "Severity"],
+            (
+                [md(v.cve), md(v.package), md(v.installed), md(v.fixed),
+                 f"{v.cvss:.1f}" if v.cvss is not None else "—", v.severity.lower()]
+                for v in fixable[:MAX_ROWS]
+            ),
+        )]
+        if len(fixable) > MAX_ROWS:
+            lines.append(f"\n… and {len(fixable) - MAX_ROWS} more in `trivy.sarif`.")
+    return lines, fixable
 
-    # Insecure code (Semgrep)
+
+def _insecure_code(sources: Sources, team_id: str) -> tuple[list[str], list[Finding]]:
     semgrep = sources.data.get("semgrep.sarif")
-    code_lines: list[str] = []
+    label = "- Insecure code patterns (CWE / OWASP Top 10): "
     if semgrep is None:
-        lines.append("- Código inseguro (CWE / OWASP Top 10): " + sources.note(
-            "semgrep.sarif", f"acr megalinter {team_id}"))
-    else:
-        findings = sarif_findings(semgrep)
-        facts["semgrep"] = findings
-        categories: Counter[str] = Counter()
-        for finding in findings:
-            cwe, owasp = weakness_tags(finding)
-            categories.update(cwe + owasp or ["sin clasificar"])
-        top = ", ".join(f"{md(name)} ({count})" for name, count in categories.most_common(5))
-        errors = sum(1 for f in findings if f.level == "error")
-        lines.append(
-            f"- Código inseguro (CWE / OWASP Top 10): **{len(findings)}** hallazgo(s) de Semgrep, "
-            f"{errors} de nivel error" + (f"; categorías: {top}" if top else "")
-        )
-        if findings:
-            code_lines = ["", "Patrones inseguros (Semgrep):", ""]
-            ranked = sorted(findings, key=lambda f: (f.level != "error", f.path, f.line or 0))
-            code_lines += table(
-                ["Regla", "CWE", "OWASP", "Nivel", "Ubicación"],
-                (
-                    [md(f.rule), md(", ".join(weakness_tags(f)[0]) or "—"),
-                     md(", ".join(weakness_tags(f)[1]) or "—"), md(f.level), md(f.where)]
-                    for f in ranked[:MAX_ROWS]
-                ),
-            )
-            if len(findings) > MAX_ROWS:
-                code_lines.append(f"\n… y {len(findings) - MAX_ROWS} más en `semgrep.sarif`.")
+        return [label + sources.note("semgrep.sarif", f"acr megalinter {team_id}")], []
+    findings = sarif_findings(semgrep)
+    categories: Counter[str] = Counter()
+    for finding in findings:
+        cwe, owasp = weakness_tags(finding)
+        categories.update(cwe + owasp or ["unclassified"])
+    top = ", ".join(f"{md(name)} ({count})" for name, count in categories.most_common(5))
+    errors = sum(1 for f in findings if f.level == "error")
+    lines = [
+        f"{label}**{len(findings)}** Semgrep finding(s), {errors} at error level"
+        + (f"; categories: {top}." if top else ".")
+    ]
+    if findings:
+        ranked = sorted(findings, key=lambda f: (f.level != "error", f.path, f.line or 0))
+        lines += ["", *table(
+            ["Rule", "CWE", "OWASP", "Level", "Location"],
+            (
+                [md(f.rule), md(", ".join(weakness_tags(f)[0]) or "—"),
+                 md(", ".join(weakness_tags(f)[1]) or "—"), md(f.level), md(f.where)]
+                for f in ranked[:MAX_ROWS]
+            ),
+        )]
+        if len(findings) > MAX_ROWS:
+            lines.append(f"\n… and {len(findings) - MAX_ROWS} more in `semgrep.sarif`.")
+    return lines, findings
 
-    # Secrets (Betterleaks): never the value, only rule, file and line.
-    secrets = _secrets(sources)
-    secret_lines: list[str] = []
-    if secrets is None:
-        lines.append("- Secretos expuestos: " + sources.note("megalinter.sarif", f"acr megalinter {team_id}"))
-    else:
-        facts["secrets"] = secrets
-        lines.append(f"- Secretos expuestos: **{len(secrets)}** (Betterleaks, incluye el historial de git)")
-        if secrets:
-            secret_lines = ["", "Secretos expuestos (sin mostrar el valor):", ""]
-            secret_lines += table(
-                ["Tipo", "Ubicación"], ([md(s.rule), md(s.where)] for s in secrets[:MAX_ROWS])
-            )
-            if len(secrets) > MAX_ROWS:
-                secret_lines.append(f"\n… y {len(secrets) - MAX_ROWS} más.")
-    return lines + cve_lines + code_lines + secret_lines, facts
+
+def _responsible_ai(sources: Sources, team_id: str) -> list[str]:
+    label = "- Responsible AI integration and OWASP LLM: "
+    review = sources.data.get(REVIEW_FILE)
+    if review is None:
+        return [label + _pending_review(sources, team_id)]
+    ai = _dict(review.get("ai_checklist"))
+    providers = ", ".join(md(p) for p in _list(ai.get("providers"))) or "none listed"
+    uses = f"the project uses AI (providers: {providers})." if ai.get("uses_ai") else (
+        "the project does not integrate an AI model or provider."
+    )
+    lines = [label + uses, ""]
+    rows = []
+    groups = ((_list(ai.get("items")), AI_CHECKS), (_list(review.get("owasp_llm")), OWASP_LLM_RISKS))
+    for checks, labels in groups:
+        for check in map(_dict, checks):
+            check_id = str(check.get("id"))
+            rows.append([
+                labels.get(check_id, md(check_id)),
+                CHECK_STATUS.get(str(check.get("status")), md(check.get("status"))),
+                md(check.get("notes", "")) + _locations(check.get("evidence")),
+            ])
+    return lines + table(["Check", "Status", "Notes"], rows)
+
+
+def _review_findings(sources: Sources) -> list[str]:
+    review = sources.data.get(REVIEW_FILE)
+    findings = [_dict(f) for f in _list(review.get("findings"))] if review else []
+    if not findings:
+        return []
+    lines = ["- Other findings of the assisted review:", ""]
+    lines += table(
+        ["Id", "Criterion", "Severity", "Location", "Finding", "Recommendation"],
+        (
+            [md(f.get("id")), md(f.get("criterion")), md(f.get("severity")),
+             md(f"{f.get('file')}:{f.get('line')}"), md(f.get("title", "")),
+             md(f.get("recommendation") or "—")]
+            for f in findings[:MAX_ROWS]
+        ),
+    )
+    if len(findings) > MAX_ROWS:
+        lines.append(f"\n… and {len(findings) - MAX_ROWS} more in `review.json`.")
+    return lines
+
+
+def _cited(path: str, external: list[dict[str, Any]]) -> str:
+    """Whether a SCANOSS match is cited, from the external code classification of ``review.json``."""
+    for item in external:
+        target = str(item.get("path", "")).rstrip("/")
+        if path == target or path.startswith(target + "/"):
+            origin = item.get("origin")
+            if origin in ("third_party_cited", "official_template", "ai_declared"):
+                return "Yes"
+            if origin in ("third_party_uncited", "ai_undeclared"):
+                return "No"
+            return "Generator"
+    return "Unknown"
 
 
 def _scanoss(sources: Sources, team_id: str) -> tuple[str, list[str]]:
@@ -446,13 +710,15 @@ def _scanoss(sources: Sources, team_id: str) -> tuple[str, list[str]]:
         return sources.note("scanoss.json", f"acr scanoss {team_id}"), []
     totals = _dict(report.get("totals"))
     summary = (
-        f"{totals.get('files_matched', 0)} de {totals.get('files_scanned', 0)} archivo(s) con "
-        f"coincidencias ({totals.get('matched_percent', 0)}%): {totals.get('file_matches', 0)} de "
-        f"archivo completo y {totals.get('snippet_matches', 0)} de fragmento"
+        f"{totals.get('files_matched', 0)} of {totals.get('files_scanned', 0)} file(s) with matches "
+        f"({totals.get('matched_percent', 0)}%): {totals.get('file_matches', 0)} whole-file and "
+        f"{totals.get('snippet_matches', 0)} snippet match(es)"
     )
     matches = [_dict(m) for m in _list(report.get("matches"))]
     if not matches:
         return summary, []
+    review = sources.data.get(REVIEW_FILE)
+    external = [_dict(i) for i in _list(review.get("external_code"))] if review else []
     rows = []
     for match in matches[:MAX_ROWS]:
         licenses = ", ".join(str(lic) for lic in _list(match.get("licenses"))) or "—"
@@ -462,10 +728,11 @@ def _scanoss(sources: Sources, team_id: str) -> tuple[str, list[str]]:
             f"{match.get('matched_percent')}%" if match.get("matched_percent") is not None else "—",
             link(match.get("url"), origin or None) if match.get("url") else md(origin or "—"),
             md(licenses),
+            _cited(str(match.get("path", "")), external) if review else "Pending review",
         ])
-    lines = ["", *table(["Archivo", "Tipo", "Coincidencia", "Proyecto de origen", "Licencias"], rows)]
+    lines = ["", *table(["File", "Type", "Match", "Source project", "License", "Cited"], rows)]
     if len(matches) > MAX_ROWS:
-        lines.append(f"\n… y {len(matches) - MAX_ROWS} más en `scanoss.json`.")
+        lines.append(f"\n… and {len(matches) - MAX_ROWS} more in `scanoss.json`.")
     return summary, lines
 
 
@@ -494,18 +761,18 @@ def _dolos(sources: Sources, team_id: str, names: dict[str, str]) -> tuple[str, 
             "theirs": row.get("file_b") if mine_a else row.get("file_a"),
         })
     if not pairs:
-        return "Este equipo no se comparó con Dolos (se necesitan al menos dos equipos obtenidos).", [], 0.0
+        return "This team was not compared with Dolos (it needs at least two fetched teams).", [], 0.0
     pairs.sort(key=lambda p: (-p["similarity"], p["other"]))
     similar = [p for p in pairs if p["file_pairs"]]
-    top = pairs[0]["similarity"]
     if not similar:
-        return f"Sin archivos similares con los {len(pairs)} equipo(s) comparados.", [], 0.0
+        return f"No similar files with the {len(pairs)} team(s) compared.", [], 0.0
+    top = similar[0]["similarity"]
     summary = (
-        f"similitud máxima {percent(top)} con {md(names.get(similar[0]['other'], similar[0]['other']))}; "
-        f"{len(similar)} de {len(pairs)} equipo(s) con archivos similares"
+        f"highest similarity {percent(top)} with {md(names.get(similar[0]['other'], similar[0]['other']))}; "
+        f"{len(similar)} of {len(pairs)} team(s) with similar files"
     )
     lines = ["", *table(
-        ["Equipo", "Similitud", "Pares de archivos", "Archivo propio", "Archivo del otro equipo"],
+        ["Team", "Similarity", "File pairs", "Own file", "Other team's file"],
         (
             [md(names.get(p["other"], p["other"])), percent(p["similarity"]), str(p["file_pairs"]),
              md(p["mine"] or "—"), md(p["theirs"] or "—")]
@@ -515,24 +782,103 @@ def _dolos(sources: Sources, team_id: str, names: dict[str, str]) -> tuple[str, 
     return summary, lines, top
 
 
+def _web(sources: Sources, team_id: str) -> tuple[str, list[str]]:
+    data = sources.data.get(WEB_PLAGIARISM_FILE)
+    if data is None:
+        return "Pending web search. " + sources.note(WEB_PLAGIARISM_FILE, f"acr review-prompt {team_id}"), []
+    matches = [_dict(m) for m in _list(data.get("matches"))]
+    if not matches:
+        return f"no similar projects found ({len(_list(data.get('queries')))} search(es))", []
+    before = sum(1 for m in matches if m.get("before_event") is True)
+    summary = f"{len(matches)} similar project(s), {before} published before the event"
+    lines = ["", *table(
+        ["Project", "Source", "Published", "Before the event", "Level"],
+        (
+            [link(m.get("url"), m.get("title")), md(m.get("source")), md(m.get("published") or "unknown"),
+             _yes_no(m.get("before_event")), md(m.get("similarity"))]
+            for m in matches[:MAX_ROWS]
+        ),
+    )]
+    return summary, lines
+
+
 def _git(sources: Sources, team_id: str) -> tuple[str, dict[str, Any]]:
     signals = sources.data.get("git-signals.json")
     if signals is None:
         return sources.note("git-signals.json", f"acr git-signals {team_id}"), {}
     if not signals.get("has_git"):
-        return "la entrega no trae historial de git (carpeta o ZIP sin `.git`).", {}
+        return "the submission has no git history (folder or ZIP without `.git`).", {}
     outside = _dict(signals.get("outside_event"))
     first = _dict(signals.get("first_commit"))
     parts = [f"{signals.get('commit_count', 0)} commit(s)"]
     if first.get("author_date"):
-        parts.append(f"primero el {md(first['author_date'])}")
-    if signals.get("single_commit"):
-        parts.append("**un solo commit con todo el código**")
+        parts.append(f"first on {md(first['author_date'])}")
     parts.append(
-        f"{outside.get('before_start', 0)} antes del inicio y {outside.get('after_end', 0)} "
-        "después del cierre del evento"
+        f"{outside.get('before_start', 0)} before the sprint started and {outside.get('after_end', 0)} "
+        "after it ended"
     )
-    return "; ".join(parts), {"git": signals, "before": outside.get("before_start", 0)}
+    if signals.get("single_commit"):
+        parts.append("**single commit with all the code**")
+    if signals.get("author_count") is not None:
+        single = " (**single author**)" if signals.get("single_author") else ""
+        parts.append(f"{signals['author_count']} author(s){single}")
+    fork = signals.get("fork")
+    parts.append("fork: " + ("unknown (a clone does not say)" if fork is None else _yes_no(fork).lower()))
+    return "; ".join(parts), {"before": outside.get("before_start", 0)}
+
+
+def _external_code(sources: Sources, team_id: str) -> list[str]:
+    label = "- Templates, generators and third-party code: "
+    review = sources.data.get(REVIEW_FILE)
+    if review is None:
+        return [label + _pending_review(sources, team_id)]
+    items = [_dict(i) for i in _list(review.get("external_code"))]
+    if not items:
+        return [label + "no external or generated code identified."]
+    return [label + f"{len(items)} item(s)", "", *table(
+        ["Path", "Origin", "Source", "Notes"],
+        (
+            [md(i.get("path")), EXTERNAL_ORIGINS.get(str(i.get("origin")), md(i.get("origin"))),
+             link(i.get("url"), i.get("source")) if i.get("url") else md(i.get("source") or "—"),
+             md(i.get("notes", ""))]
+            for i in items[:MAX_ROWS]
+        ),
+    )]
+
+
+def judge_questions(sources: Sources) -> list[str]:
+    """The questions for the judges of ``review.json``, as a numbered Markdown list."""
+    review = sources.data.get(REVIEW_FILE)
+    if review is None:
+        return []
+    lines = []
+    for n, question in enumerate(map(_dict, _list(review.get("judge_questions"))), start=1):
+        topic = JUDGE_TOPICS.get(str(question.get("topic")), md(question.get("topic")))
+        where = md(f"{question.get('file')}:{question.get('line')}")
+        lines.append(f"{n}. **{topic}:** {md(question.get('question', ''))} ({where})")
+    return lines
+
+
+def _recommendations(
+    facts: dict[str, Any], scanoss_lines: list[str], top_similarity: float, git: dict[str, Any]
+) -> list[str]:
+    items = []
+    if facts.get("secrets"):
+        items.append(
+            "- Revoke and rotate the exposed secrets, remove them from the code and the git history, "
+            "and read them from environment variables."
+        )
+    if facts.get("fixable"):
+        packages = sorted({v.package for v in facts["fixable"]})
+        shown = ", ".join(md(p) for p in packages[:5]) + (" …" if len(packages) > 5 else "")
+        items.append(f"- Update the dependencies with critical/high CVE that already have a fix: {shown}.")
+    if facts.get("semgrep"):
+        items.append("- Fix the insecure patterns reported by Semgrep, starting with the error-level ones.")
+    if scanoss_lines:
+        items.append("- Cite the source and respect the license of code taken from open source projects.")
+    if top_similarity or git.get("before"):
+        items.append("- Clarify with the organizers the code similar to other teams or older than the event.")
+    return items
 
 
 # --------------------------------------------------------------------------- report
@@ -547,132 +893,112 @@ def build_report(
     dashboard_url: str = DEFAULT_DASHBOARD_URL,
     now: datetime | None = None,
 ) -> str:
-    """The Markdown report of ``team`` with the template of SPEC.md "Entregables"."""
+    """The Markdown report of ``team`` with the English template of SPEC.md "Entregables"."""
     if not is_valid_team_id(team.id):
         raise ReportError(f"id inválido ({team.id!r})")
     names = names or {}
     sources = load_sources(team.id, reports_dir)
     stamp = (now or datetime.now().astimezone()).isoformat(timespec="seconds")
 
-    languages, language_table = _languages(sources, team.id)
-    security, facts = _security(sources, team.id)
+    marks = checklist(sources, team.id)
+    counts = Counter(mark.result for mark in marks.values())
     scanoss, scanoss_lines = _scanoss(sources, team.id)
     dolos, dolos_lines, top_similarity = _dolos(sources, team.id, names)
+    web, web_lines = _web(sources, team.id)
     git, git_facts = _git(sources, team.id)
-    has_review = "review.json" in sources.data
-    has_web = "web-plagiarism.json" in sources.data
+    dependencies, fixable = _dependencies(sources, team.id)
+    insecure, semgrep = _insecure_code(sources, team.id)
+    facts = {"secrets": _secrets(sources), "fixable": fixable, "semgrep": semgrep}
+    review = sources.data.get(REVIEW_FILE)
 
-    critical = []
-    if facts.get("fixable"):
-        critical.append(f"{len(facts['fixable'])} CVE crítica(s)/alta(s) con corrección disponible")
-    if facts.get("secrets"):
-        critical.append(f"{len(facts['secrets'])} secreto(s) expuesto(s)")
-    semgrep_errors = [f for f in facts.get("semgrep", []) if f.level == "error"]
-    if semgrep_errors:
-        critical.append(f"{len(semgrep_errors)} hallazgo(s) de código inseguro de nivel error (Semgrep)")
-    unknown = {"scc.json", "megalinter.sarif", "trivy.sarif", "semgrep.sarif"} & (
-        sources.missing | sources.unreadable
+    failed = [item for item, mark in marks.items() if mark.result == FAIL]
+    key = [f"failed items: {', '.join(failed)}" if failed else "no failed items"]
+    if fixable:
+        key.append(f"{len(fixable)} critical/high CVE with a fix available (annex)")
+    if review is not None:
+        key.append(f"assisted review ({md(review.get('status'))}): {md(review.get('summary', ''))}")
+    unknown = sorted(
+        {"scc.json", "megalinter.sarif", "git-signals.json", REVIEW_FILE}
+        & (sources.missing | sources.unreadable | set(sources.invalid))
     )
-    critical_text = "; ".join(critical) if critical else "ninguno en los resultados disponibles"
     if unknown:
-        critical_text += f" (faltan {', '.join(f'`{n}`' for n in sorted(unknown))})"
-
-    review_note = (
-        "Ver `review.json` (revisión asistida con Claude Code); su formato llega con PB-13."
-        if has_review
-        else "Pendiente: revisión asistida con Claude Code (`review.json`, PB-13)."
-    )
+        key.append("missing results: " + ", ".join(f"`{name}`" for name in unknown))
     dashboard = link(dashboard_url) if dashboard_url else "—"
 
     out = [
-        f"# Reporte de revisión – {md(team.nombre)} – {md(team.proyecto)}",
+        f"# Code Review Report – {md(team.nombre)} – {md(team.proyecto)}",
         "",
-        f"Evento: {md(event.nombre)} · Equipo: {md(team.id)} · Generado: {stamp}",
+        f"Event: {md(event.nombre)} · Team id: {md(team.id)} · Generated: {stamp} · "
+        f"Dashboard: {dashboard}",
         "",
-        "> Borrador generado a partir de las herramientas de análisis estático. Una coincidencia "
-        "indica similitud, no copia confirmada; toda conclusión la valida el revisor.",
+        "> Draft generated from static analysis tools and an assisted review. Every mark is "
+        "validated by the reviewer. A match indicates similarity, not confirmed copying; any "
+        "sanction is decided by the organizers.",
         "",
-        "## Resumen",
-        f"- Lenguajes y tamaño (scc): {languages}",
-        f"- Enlace al dashboard (Grafana): {dashboard} (equipo `{team.id}`)",
-        f"- Hallazgos críticos: {critical_text}",
+        "## Summary",
+        f"- Languages and size (scc): {_languages(sources, team.id)}",
+        f"- Project goal: {md(team.objetivo)}",
+        f"- Checklist: {counts[PASS]} pass · {counts[FAIL]} fail · {counts[MANUAL]} manual review",
+        f"- Key findings: {'; '.join(key)}",
         "",
-        "## Factibilidad técnica",
+        "## Official checklist",
         "",
-        f"Objetivo del proyecto: {md(team.objetivo)}",
-        "",
-        *(language_table + [""] if language_table else [languages, ""]),
-    ]
-    if "vulns" in facts:
-        out += [f"Dependencias con CVE (Trivy): {len({v.package for v in facts['vulns']})} paquete(s).", ""]
-    out += [
-        f"Arquitectura y dependencias abandonadas: {review_note}",
-        "",
-        "## Calidad del código",
-        "",
-        *_quality(sources, team.id),
-        "",
-        "## Seguridad",
-        *security,
-        "",
-        "## Integración responsable de IA",
-        "",
-    ]
-    if "secrets" in facts:
-        out.append(f"- Secretos expuestos (API keys en el código): {len(facts['secrets'])}.")
-    out += [
-        f"- Checklist de IA responsable y riesgos de OWASP Top 10 para LLM: {review_note}",
-        "",
-        "## Plagio",
-        f"- Código externo (SCANOSS): {scanoss}",
-        *scanoss_lines,
-        f"- Entre equipos (Dolos): {dolos}",
-        *dolos_lines,
-        "- Ideas en la web: "
-        + (
-            "ver `web-plagiarism.json`; su formato llega con PB-13."
-            if has_web
-            else "Pendiente: búsqueda web con Claude Code (`web-plagiarism.json`, PB-13)."
+        *table(
+            ["#", "Item", "Result", "Evidence"],
+            (
+                [item, CHECKLIST_ITEMS[item], f"**{mark.result}**" if mark.result == FAIL else mark.result,
+                 mark.evidence]
+                for item, mark in marks.items()
+            ),
         ),
-        f"- Historial de git: {git}",
         "",
-        "## Recomendaciones al equipo",
+        "## Plagiarism and originality evidence",
+        f"- External code (SCANOSS): {scanoss}",
+        *scanoss_lines,
+        f"- Between teams (Dolos): {dolos}",
+        *dolos_lines,
+        f"- Similar projects on the web: {web}",
+        *web_lines,
+        f"- Git history: {git}",
+        *_external_code(sources, team.id),
+        "",
+        "## Questions for the judges",
+        "",
+    ]
+    questions = judge_questions(sources)
+    if questions:
+        out += questions
+    else:
+        out.append(_pending_review(sources, team.id))
+    out += [
+        "",
+        "## Reviewer feedback",
+        "",
+        "> To be written by the reviewer. Draft points from the tools:",
         "",
     ]
     out += _recommendations(facts, scanoss_lines, top_similarity, git_facts) or [
-        "- Sin recomendaciones automáticas con los resultados disponibles."
+        "- No automatic points with the available results."
     ]
-    if not has_review:
-        out.append("- Las recomendaciones de la revisión asistida se agregan cuando exista `review.json`.")
+    out += [
+        "",
+        "## Technical annex (formative, not scored)",
+        *dependencies,
+        *insecure,
+    ]
+    if facts["secrets"] is not None:
+        out.append(f"- Exposed secrets (item 4.3): {len(facts['secrets'])}, values never shown.")
+    out += [*_quality(sources, team.id), *_responsible_ai(sources, team.id), *_review_findings(sources)]
     return "\n".join(out).rstrip() + "\n"
 
 
-def _recommendations(
-    facts: dict[str, Any], scanoss_lines: list[str], top_similarity: float, git: dict[str, Any]
-) -> list[str]:
-    items = []
-    if facts.get("secrets"):
-        items.append(
-            "- Revocar y rotar los secretos expuestos, quitarlos del código y del historial de git, "
-            "y leerlos de variables de entorno."
-        )
-    if facts.get("fixable"):
-        packages = sorted({v.package for v in facts["fixable"]})
-        shown = ", ".join(md(p) for p in packages[:5]) + (" …" if len(packages) > 5 else "")
-        items.append(
-            f"- Actualizar las dependencias con CVE críticas/altas que ya tienen corrección: {shown}."
-        )
-    if facts.get("semgrep"):
-        items.append(
-            "- Corregir los patrones inseguros señalados por Semgrep, empezando por los de nivel error."
-        )
-    if scanoss_lines:
-        items.append("- Citar el origen y respetar la licencia del código tomado de proyectos open source.")
-    if top_similarity or git.get("before"):
-        items.append(
-            "- Aclarar con los organizadores el código similar a otros equipos o anterior al evento."
-        )
-    return items
+def _write(target: Path, text: str) -> Path:
+    """Write ``target``; the previous file is replaced only when done."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging = target.with_name(f".{target.name}.tmp")
+    staging.write_text(text, encoding="utf-8")
+    staging.replace(target)
+    return target
 
 
 def write_report(
@@ -684,12 +1010,36 @@ def write_report(
     dashboard_url: str = DEFAULT_DASHBOARD_URL,
     now: datetime | None = None,
 ) -> Path:
-    """Write ``reports_dir/<id>/reporte.md``; the previous report is replaced only when done."""
+    """Write ``reports_dir/<id>/reporte.md``."""
     text = build_report(team, event, reports_dir, names=names, dashboard_url=dashboard_url, now=now)
-    out_dir = reports_dir / team.id
-    out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / REPORT_FILE
-    staging = out_dir / f".{REPORT_FILE}.tmp"
-    staging.write_text(text, encoding="utf-8")
-    staging.replace(target)
-    return target
+    return _write(reports_dir / team.id / REPORT_FILE, text)
+
+
+def build_judge_questions(
+    teams: Sequence[Team], event: Event, reports_dir: Path = DEFAULT_REPORTS_DIR, now: datetime | None = None
+) -> str:
+    """``judge-questions.md``: the questions for the judges of every team (SPEC.md "Entregables")."""
+    stamp = (now or datetime.now().astimezone()).isoformat(timespec="seconds")
+    out = [
+        f"# Questions for the judges – {md(event.nombre)}",
+        "",
+        f"Generated: {stamp}. Draft questions from the assisted review, validated by the reviewer; "
+        "each one points to the file and line it is about.",
+    ]
+    for team in teams:
+        if not is_valid_team_id(team.id):
+            raise ReportError(f"id inválido ({team.id!r})")
+        sources = Sources()
+        _read_validated(
+            reports_dir / team.id / REVIEW_FILE, sources, REVIEW_FILE, team.id, validate_review
+        )
+        out += ["", f"## {md(team.nombre)} – {md(team.proyecto)}", ""]
+        out += judge_questions(sources) or [_pending_review(sources, team.id)]
+    return "\n".join(out).rstrip() + "\n"
+
+
+def write_judge_questions(
+    teams: Sequence[Team], event: Event, reports_dir: Path = DEFAULT_REPORTS_DIR, now: datetime | None = None
+) -> Path:
+    """Write ``reports_dir/judge-questions.md`` with every team."""
+    return _write(reports_dir / JUDGE_QUESTIONS_FILE, build_judge_questions(teams, event, reports_dir, now))
