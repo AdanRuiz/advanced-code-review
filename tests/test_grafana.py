@@ -128,7 +128,7 @@ def test_uids_are_unique_and_stable(dashboards):
 def test_every_page_has_the_tag_and_the_navbar(dashboards):
     for slug, dashboard in dashboards.items():
         assert TAG in dashboard["tags"], slug
-        (link,) = dashboard["links"]
+        (link,) = [link for link in dashboard["links"] if link["type"] == "dashboards"]
         assert link["type"] == "dashboards", slug
         assert link["tags"] == [TAG], slug
         assert link["asDropdown"] is False, slug  # buttons, not a dropdown
@@ -177,5 +177,36 @@ def test_dashboards_use_only_provisioned_datasources(dashboards, datasources):
 
 def test_infinity_urls_point_to_the_file_server(dashboards):
     for slug, dashboard in dashboards.items():
-        for url in re.findall(r'"url":\s*"(http[^"]*)"', json.dumps(dashboard)):
+        without_links = {key: value for key, value in dashboard.items() if key != "links"}
+        for url in re.findall(r'"url":\s*"(http[^"]*)"', json.dumps(without_links)):
             assert url.startswith("http://files:8080/reports/"), (slug, url)
+
+
+# --- export buttons (PB-23, SPEC.md "Exportación de reportes") ---------------------------------
+
+EXPORT_LINKS = {
+    "PDF equipo": "http://localhost:8080/reports/${equipo}/reporte.pdf",
+    "MD equipo": "http://localhost:8080/reports/${equipo}/reporte.md",
+    "ZIP todos": "http://localhost:8080/reports/todos.zip",
+}
+
+
+def test_every_page_has_the_export_buttons_after_the_navbar(dashboards):
+    for slug, dashboard in dashboards.items():
+        links = dashboard["links"]
+        assert links[0]["type"] == "dashboards", slug
+        exports = links[1:]
+        assert {link["title"]: link["url"] for link in exports} == EXPORT_LINKS, slug
+        assert [link["title"] for link in exports] == list(EXPORT_LINKS), slug  # navbar order
+        for link in exports:
+            assert link["type"] == "link", (slug, link["title"])
+            assert link["targetBlank"] is True, (slug, link["title"])
+            # Grafana variables in the query string are not needed and would leak into the URL.
+            assert link["includeVars"] is False and link["keepTime"] is False, (slug, link["title"])
+
+
+def test_export_buttons_use_the_browser_side_file_server(compose):
+    # The browser reaches the file server on localhost:8080, published only on 127.0.0.1.
+    assert "127.0.0.1:8080:8080" in compose["services"]["files"]["ports"]
+    for url in EXPORT_LINKS.values():
+        assert url.startswith("http://localhost:8080/reports/")

@@ -19,6 +19,7 @@ COMMANDS = [
     "security",
     "plagiarism",
     "report",
+    "export",
     "review-prompt",
     "review-validate",
 ]
@@ -56,7 +57,7 @@ def test_config_option_default_and_override(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "command", ["fetch", "git-signals", "scc", "megalinter", "scanoss", "analyze", "report"]
+    "command", ["fetch", "git-signals", "scc", "megalinter", "scanoss", "analyze", "report", "export"]
 )
 def test_optional_team_id(command):
     parser = build_parser()

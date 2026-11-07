@@ -112,6 +112,39 @@ def test_caddyfile_requires_auth_and_does_not_list():
     assert "sandbox" in caddyfile
 
 
+def _caddy_matcher(caddyfile: str, name: str) -> re.Pattern:
+    match = re.search(rf"@{name} path_regexp (\S+)", caddyfile)
+    assert match, name
+    return re.compile(match.group(1))
+
+
+def test_caddyfile_export_buttons_with_many_teams_go_to_the_zip():
+    # PB-23: with equipo = Todos or several teams the PDF/MD buttons download todos.zip.
+    caddyfile = (SERVICES / "files" / "Caddyfile").read_text(encoding="utf-8")
+    assert "redir @many_teams /reports/todos.zip 302" in caddyfile
+    many = _caddy_matcher(caddyfile, "many_teams")
+    for path in (
+        "/reports/{equipo-01,equipo-02}/reporte.pdf",
+        "/reports/%7Bequipo-01,equipo-02%7D/reporte.md",
+        "/reports/$__all/reporte.pdf",
+        "/reports/equipo-01,equipo-02/reporte.pdf",
+        "/reports//reporte.pdf",
+    ):
+        assert many.search(path), path
+    for path in ("/reports/equipo-01/reporte.pdf", "/reports/equipo-01/reporte.md", "/reports/todos.zip"):
+        assert not many.search(path), path
+
+
+def test_caddyfile_exports_download_as_attachment():
+    caddyfile = (SERVICES / "files" / "Caddyfile").read_text(encoding="utf-8")
+    assert "header @export Content-Disposition attachment" in caddyfile
+    export = _caddy_matcher(caddyfile, "export")
+    for path in ("/reports/todos.zip", "/reports/equipo-01/reporte.pdf", "/reports/equipo-01/reporte.md"):
+        assert export.search(path), path
+    for path in ("/reports/status.json", "/reports/equipo-01/scc.json", "/reports/dolos/pairs.csv"):
+        assert not export.search(path), path
+
+
 def test_entrypoint_refuses_empty_credentials():
     script = (SERVICES / "files" / "entrypoint.sh").read_text(encoding="utf-8")
     assert 'if [ -z "${ACR_FILES_USER:-}" ] || [ -z "${ACR_FILES_PASSWORD:-}" ]' in script

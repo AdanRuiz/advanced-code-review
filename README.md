@@ -43,7 +43,7 @@ Claude Code requiere una suscripción propia.
 3. Correr MegaLinter (un contenedor) y enviar los resultados a Grafana.
 4. Correr SCANOSS por repositorio y Dolos sobre todos los repositorios juntos.
 5. Hacer la revisión asistida con Claude Code a partir de los reportes generados.
-6. Entregar el dashboard y un reporte Markdown por equipo.
+6. Entregar el dashboard y un reporte por equipo en Markdown y PDF, más un ZIP con todos.
 
 ## Uso
 
@@ -64,6 +64,7 @@ python -m acr plagiarism             # datos de la página Plagio en reports/pla
 python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la revisión asistida (PB-13)
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
 python -m acr report [ID]            # reporte Markdown por equipo en reports/<id>/reporte.md (PB-14)
+python -m acr export [ID]            # reporte.md y reporte.pdf por equipo y reports/todos.zip (PB-23)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
@@ -136,13 +137,14 @@ Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `P
 1. Por equipo: `fetch`, `git-signals`, `scc`, `megalinter` y `scanoss` (mismas opciones `--max-zip-mb`, `--engine`, `--image` y `--timeout-min`). Si falla la obtención, ese equipo se detiene ahí; si falla un paso posterior, se registra y se siguen los demás pasos y equipos.
 2. Al final, `dolos` una sola vez sobre todos los equipos obtenidos (también los que no se volvieron a analizar), para que la matriz quede al día. Con menos de dos equipos obtenidos se omite.
 3. Después, `security` y `plagiarism` sobre todos los equipos de `equipos.yml` (ver abajo).
+4. Al final, `export` sobre todos los equipos: las exportaciones (Markdown, PDF y ZIP) se regeneran en la misma corrida.
 
 El avance queda en `reports/status.json`, que se reescribe en cada paso:
 
 - `teams`: un elemento por equipo de `equipos.yml` con `state` (`pendiente`, `obteniendo`, `analizando`, `listo` o `error`), el paso en curso (`step`), el resultado de cada paso (`steps`: `ok`, `error`, `omitido`), `started_at`/`finished_at`, `error` y `log` (`<id>/analyze.log`, relativo a `reports/`, con la bitácora de la última corrida).
 - `dolos`: estado, equipos comparados y hora de la última corrida de Dolos.
 
-Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sistema operativo en `reports/.locks/`; si ya hay un análisis en curso para un equipo, no se lanza otro y se avisa. Si el proceso muere, el candado se libera solo y el equipo que quedó "analizando" pasa a `error` ("análisis interrumpido") en la siguiente escritura. Sale con código 1 si algún equipo terminó con error, estaba ocupado o Dolos falló. La revisión asistida con Claude Code y las exportaciones (PB-13, PB-14, PB-23) aún no forman parte del pipeline.
+Un análisis a la vez por equipo: cada equipo se bloquea con un candado del sistema operativo en `reports/.locks/`; si ya hay un análisis en curso para un equipo, no se lanza otro y se avisa. Si el proceso muere, el candado se libera solo y el equipo que quedó "analizando" pasa a `error` ("análisis interrumpido") en la siguiente escritura. Sale con código 1 si algún equipo terminó con error, estaba ocupado, Dolos falló o no se pudo exportar algún reporte. La revisión asistida con Claude Code (PB-13) no forma parte del pipeline.
 
 `acr security` (también al final de `acr analyze`) resume en `reports/security.json` los datos de la página Seguridad del dashboard para todos los equipos de `equipos.yml`, a partir de los SARIF que ya están en `reports/<id>/` (no vuelve a analizar). Infinity lee una URL por consulta y no puede recorrer los equipos elegidos en la variable `equipo`, por eso los paneles leen este único archivo y filtran sus filas por equipo:
 
@@ -181,6 +183,14 @@ La revisión asistida la hace el revisor con Claude Code (suscripción propia), 
 
 Si falta un resultado o no se puede leer, su sección lo dice y nombra el comando que lo genera. La revisión asistida y la búsqueda web (`review.json`, `web-plagiarism.json`) quedan como pendientes: el reporte todavía no lee el formato que define PB-13. El texto que viene de los repositorios (rutas, reglas, enlaces) se escapa para que no inyecte Markdown ni HTML; solo se enlazan URL `http(s)`.
 
+`acr export [ID]` (también al final de `acr analyze`) genera las descargas de los botones del dashboard (PB-23, [Exportación de reportes](SPEC.md#exportación-de-reportes)):
+
+- `reports/<id>/reporte.md`: se regenera como en `acr report`.
+- `reports/<id>/reporte.pdf`: el Markdown convertido con [md-to-pdf](https://github.com/simonhaenisch/md-to-pdf) (requiere md-to-pdf en el `PATH`, PB-1). md-to-pdf levanta un servidor HTTP local con su carpeta base mientras convierte; por eso corre sobre una copia del reporte en una carpeta temporal vacía y nunca ve `reports/` ni el código de los equipos.
+- `reports/todos.zip`: `reporte.md` y `reporte.pdf` de **todos** los equipos de `equipos.yml` (aunque se pase un `ID`) y los CSV de Dolos (`dolos/pairs.csv`, `dolos/file-pairs.csv`). No incluye SARIF, bitácoras ni otros archivos de `reports/`; lo que falte se avisa.
+
+Cada archivo se escribe aparte y reemplaza al anterior solo al terminar: si md-to-pdf falla o no está instalado, se conserva el PDF anterior, el Markdown y el ZIP se escriben igual y el comando sale con código 1.
+
 ### Dashboard local (servicios)
 
 [`compose.yaml`](compose.yaml) levanta los servicios del dashboard (PB-15) con `podman compose up -d` (o `docker compose up -d`) desde la raíz del proyecto:
@@ -212,6 +222,7 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 - **6 páginas** en la carpeta *Advanced Code Review*: 1. Resumen (página de inicio), 2. Equipo, 3. Calidad, 4. Seguridad, 5. Plagio y 6. Calificación. Todas llevan la etiqueta `advanced-code-review` y un *dashboard link* por esa etiqueta, que las muestra como botones arriba (navbar) y conserva las variables y el rango de tiempo al cambiar de página. No se editan desde la interfaz: se cambian en los JSON.
 - **Variable `equipo`** en todas las páginas: Todos / uno / varios, con los `id` de `reports/status.json` (lo escribe `acr analyze`; sin ese archivo la lista queda vacía).
 - **Variable `herramienta`** solo en Calidad y Seguridad: linters, con `label_values(linter)` de Prometheus.
+- **Botones de exportación** (PB-23) en todas las páginas, junto al navbar: **PDF equipo** y **MD equipo** (`http://localhost:8080/reports/${equipo}/reporte.pdf` y `.md`) y **ZIP todos** (`/reports/todos.zip`). Se abren en otra pestaña, piden el usuario y la contraseña del servidor de archivos y se descargan como archivo (`Content-Disposition: attachment`). Con `equipo` = Todos o varios equipos, el servidor de archivos redirige PDF y MD a `todos.zip`. Los archivos los genera `acr export` (o `acr analyze`).
 
 **4. Seguridad** (PB-21) lee `reports/security.json` con Infinity, filtrado por la variable `equipo`:
 
@@ -232,7 +243,7 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 - **Historial de git:** commits, primer commit, commits antes del inicio y después del cierre, commit único y fork.
 - Clic en un equipo en las tablas, las barras o la matriz abre la página Equipo filtrada; los enlaces de SCANOSS y de la web abren en otra pestaña.
 
-Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20) ni botones de exportación (PB-23), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
+Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 

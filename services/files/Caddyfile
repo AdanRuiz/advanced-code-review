@@ -28,6 +28,16 @@
 		@hidden path_regexp /\.
 		respond @hidden 404
 
+		# Botones PDF/MD equipo (PB-23, SPEC.md "Exportación de reportes"): con equipo = Todos o
+		# varios equipos, Grafana pone en la URL algo que no es un id (por ejemplo {a,b}); se
+		# descarga el ZIP con todos.
+		@many_teams path_regexp ^/reports/([^/]*[^a-z0-9/-][^/]*)?/reporte\.(pdf|md)$
+		redir @many_teams /reports/todos.zip 302
+
+		# Las exportaciones se descargan como archivo, no se abren en el navegador.
+		@export path_regexp ^/reports/(todos\.zip|[a-z0-9-]+/reporte\.(pdf|md))$
+		header @export Content-Disposition attachment
+
 		root * /srv
 		file_server
 	}

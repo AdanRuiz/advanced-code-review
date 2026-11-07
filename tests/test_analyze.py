@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from acr import analyze
+from acr import analyze, cli
 from acr.analyze import (
     AnalysisResult,
     Options,
@@ -353,6 +353,14 @@ def fake_tools(monkeypatch):
         "write_dolos": write_dolos,
     }.items():
         monkeypatch.setattr(analyze, name, fake)
+
+    # PB-23: md-to-pdf is not run; the PDF export is checked in test_export.py.
+    def write_pdf(team_id, reports_dir):
+        target = reports_dir / team_id / "reporte.pdf"
+        target.write_bytes(b"%PDF-1.7 fake")
+        return target
+
+    monkeypatch.setattr(cli, "write_pdf", write_pdf)
     return calls
 
 
@@ -404,6 +412,12 @@ def test_cli_analyze_all(tmp_path, monkeypatch, capsys, fake_tools):
     assert "-> reports/plagiarism.json" in out
     plagiarism = json.loads((tmp_path / "reports" / "plagiarism.json").read_text(encoding="utf-8"))
     assert [team["team"] for team in plagiarism["teams"]] == ["equipo-01", "equipo-02"]
+    # PB-23: and the exports of every team, in the same run.
+    for team_id in ("equipo-01", "equipo-02"):
+        assert (tmp_path / "reports" / team_id / "reporte.md").is_file()
+        assert (tmp_path / "reports" / team_id / "reporte.pdf").is_file()
+    assert "-> reports/todos.zip" in out
+    assert (tmp_path / "reports" / "todos.zip").is_file()
 
 
 def test_cli_analyze_one_team_and_errors(tmp_path, monkeypatch, capsys, fake_tools):
