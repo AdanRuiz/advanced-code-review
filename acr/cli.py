@@ -18,6 +18,7 @@ from acr.dolos import DolosError, write_dolos
 from acr.export import ExportError, write_pdf, write_zip
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
+from acr.git_signals import summarize as summarize_git_signals
 from acr.megalinter import (
     DEFAULT_IMAGE,
     DEFAULT_TIMEOUT_SECONDS,
@@ -110,20 +111,14 @@ def _git_signals(args: argparse.Namespace) -> int:
     failed = 0
     for team in teams:
         try:
-            path, signals = write_git_signals(team.id, config.evento, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+            path, signals = write_git_signals(
+                team.id, config.evento, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR, members=team.integrantes
+            )
         except (GitSignalsError, OSError) as exc:
             failed += 1
             print(f"{team.id}: error: {exc}", file=sys.stderr)
             continue
-        if not signals["has_git"]:
-            summary = "sin historial de git"
-        else:
-            outside = signals["outside_event"]
-            summary = (
-                f"{signals['commit_count']} commit(s), {outside['before_start']} antes del inicio, "
-                f"{outside['after_end']} después del cierre"
-            )
-        print(f"{team.id}: {summary} -> {path.as_posix()}")
+        print(f"{team.id}: {summarize_git_signals(signals)} -> {path.as_posix()}")
     if failed:
         print(f"acr git-signals: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
         return EXIT_ERROR

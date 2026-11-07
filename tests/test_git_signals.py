@@ -1,4 +1,4 @@
-"""Tests for git history signals (PB-7, SPEC.md "Detección de plagio").
+"""Tests for git history signals (PB-7, PB-57; SPEC.md "Detección de plagio", Checklist 1.1, 1.2).
 
 git is never called: a fake runner answers ``rev-parse`` and ``log`` with canned output.
 """
@@ -13,11 +13,13 @@ import yaml
 
 from acr import git_signals
 from acr.cli import EXIT_ERROR, EXIT_OK, main
-from acr.config import Event
+from acr.config import Event, Member
 from acr.git_signals import (
     GitSignalsError,
     build_signals,
+    match_member,
     read_history,
+    summarize,
     write_git_signals,
 )
 
@@ -27,12 +29,32 @@ EVENT = Event(
     fin=datetime.fromisoformat("2026-11-03T18:00:00-06:00"),
 )
 
-# Newest first, as git log prints it.
+ANA = ("Ana López", "123+analopez@users.noreply.github.com")
+BETO = ("Beto Ruiz", "beto@example.org")
+MEMBERS = (Member(nombre="Ana Lopez", github="analopez"), Member(nombre="Beto Ruiz", github="betoruiz"))
+
+
+def header(sha: str, author: str, committer: str | None = None, who: tuple[str, str] = ANA) -> str:
+    """A header line in the format ``read_history`` asks git log for."""
+    return f"\x1e{sha}\x1f{author}\x1f{committer or author}\x1f{who[0]}\x1f{who[1]}"
+
+
+# Newest first, as git log --numstat prints it (a blank line between header and numstat).
 LOG = "\n".join(
     [
-        "c3 2026-11-03T19:00:00-06:00 2026-11-03T19:00:00-06:00",  # after the end
-        "c2 2026-11-02T10:00:00-06:00 2026-11-02T10:00:00-06:00",  # inside
-        "c1 2026-10-20T10:00:00-06:00 2026-11-01T10:00:00-06:00",  # authored before, rebased inside
+        header("c3", "2026-11-03T19:00:00-06:00", who=BETO),  # after the end
+        "",
+        "5\t1\tsrc/app.py",
+        header("c2", "2026-11-02T10:00:00-06:00", who=BETO),  # inside
+        "",
+        "20\t4\tsrc/app.py",
+        "3000\t0\tpackage-lock.json",
+        "100\t0\tnode_modules/lib/index.js",
+        "-\t-\tlogo.png",
+        # authored before, rebased inside
+        header("c1", "2026-10-20T10:00:00-06:00", "2026-11-01T10:00:00-06:00"),
+        "",
+        "75\t0\tsrc/app.py",
     ]
 ) + "\n"
 
@@ -80,6 +102,8 @@ def test_read_history_runs_only_safe_read_commands(tmp_path):
         assert kwargs.get("shell") is not True
     assert "rev-parse" in fake.calls[0]
     assert "log" in fake.calls[1] and fake.calls[1][-1] == "HEAD"
+    assert "--numstat" in fake.calls[1]
+    assert "--no-ext-diff" in fake.calls[1] and "--no-textconv" in fake.calls[1]
 
 
 def test_no_git_folder_means_no_history(tmp_path):
@@ -113,7 +137,11 @@ def test_git_log_failure(tmp_path):
 def test_unexpected_log_output(tmp_path):
     repo = make_repo(tmp_path)
     with pytest.raises(GitSignalsError):
-        read_history(repo, runner=FakeGit(log="c1 not-a-date not-a-date\n"))
+        read_history(repo, runner=FakeGit(log=header("c1", "not-a-date") + "\n"))
+    with pytest.raises(GitSignalsError):
+        read_history(repo, runner=FakeGit(log="c1 2026-11-01T09:00:00-06:00\n"))
+    with pytest.raises(GitSignalsError):
+        read_history(repo, runner=FakeGit(log="\x1ec1\x1f2026-11-01T09:00:00-06:00\n"))
 
 
 def test_git_not_installed(tmp_path):
@@ -148,7 +176,7 @@ def test_signals_first_last_count_and_outside(tmp_path):
 
 
 def test_dates_compared_across_time_zones():
-    commits = read_history_from("c1 2026-11-01T14:30:00+00:00 2026-11-01T14:30:00+00:00\n")
+    commits = read_history_from(header("c1", "2026-11-01T14:30:00+00:00") + "\n")
     signals = build_signals("equipo-01", EVENT, commits)  # 14:30Z = 08:30-06:00, before 09:00
     assert signals["outside_event"]["before_start"] == 1
     assert signals["single_commit"] is True
@@ -157,17 +185,164 @@ def test_dates_compared_across_time_zones():
 def test_event_without_time_zone_is_local_time():
     naive = Event(nombre="H", inicio=datetime(2026, 11, 1, 9), fin=datetime(2026, 11, 3, 18))
     local = datetime(2026, 11, 2, 12).astimezone().isoformat()
-    signals = build_signals("equipo-01", naive, read_history_from(f"c1 {local} {local}\n"))
+    signals = build_signals("equipo-01", naive, read_history_from(header("c1", local) + "\n"))
     assert signals["outside_event"]["commits"] == []
 
 
 def test_signals_without_git_or_commits():
     for commits, has_git in ((None, False), ([], True)):
-        signals = build_signals("equipo-01", EVENT, commits)
+        signals = build_signals("equipo-01", EVENT, commits, MEMBERS)
         assert signals["has_git"] is has_git
         assert signals["commit_count"] == 0
         assert signals["first_commit"] is None and signals["last_commit"] is None
         assert signals["outside_event"] == {"before_start": 0, "after_end": 0, "commits": []}
+        assert signals["commits"] == [] and signals["authors"] == []
+        assert signals["largest_commit"] is None and signals["largest_commit_percent"] is None
+        assert signals["author_count"] == 0 and signals["single_author"] is False
+        assert signals["members_without_commits"] == ["analopez", "betoruiz"]
+        assert signals["fork"] is None
+
+
+# --- point 1.1: size of each commit ---------------------------------------------------------
+
+
+def test_lines_per_commit_exclude_dependencies_and_binaries():
+    signals = build_signals("equipo-01", EVENT, read_history_from(LOG))
+    rows = {row["hash"]: row for row in signals["commits"]}
+    assert [row["hash"] for row in signals["commits"]] == ["c1", "c2", "c3"]  # oldest first
+    assert rows["c2"] == {
+        "hash": "c2",
+        "author_date": "2026-11-02T10:00:00-06:00",
+        "author": "Beto Ruiz",
+        "files_changed": 4,
+        "lines_added": 20,
+        "lines_deleted": 4,
+        "lines_changed": 24,
+        "excluded_lines": 3100,
+    }
+    assert rows["c1"]["lines_changed"] == 75 and rows["c3"]["lines_changed"] == 6
+    assert (signals["lines_added"], signals["lines_deleted"], signals["excluded_lines"]) == (100, 5, 3100)
+
+
+def test_largest_commit_share_of_code():
+    signals = build_signals("equipo-01", EVENT, read_history_from(LOG))
+    assert signals["largest_commit"] == {
+        "hash": "c1",
+        "author_date": "2026-10-20T10:00:00-06:00",
+        "lines_added": 75,
+        "percent_of_code": 75.0,
+    }
+    assert signals["largest_commit_percent"] == 75.0
+
+
+def test_largest_commit_tie_takes_the_earliest_and_no_code_gives_no_percent():
+    log = "\n".join(
+        [
+            header("b", "2026-11-02T10:00:00-06:00"),
+            "10\t0\ta.py",
+            header("a", "2026-11-01T10:00:00-06:00"),
+            "10\t0\tb.py",
+        ]
+    )
+    signals = build_signals("equipo-01", EVENT, read_history_from(log))
+    assert signals["largest_commit"]["hash"] == "a" and signals["largest_commit_percent"] == 50.0
+
+    only_lock = read_history_from(header("a", "2026-11-01T10:00:00-06:00") + "\n10\t0\tyarn.lock\n")
+    signals = build_signals("equipo-01", EVENT, only_lock)
+    assert signals["largest_commit"] is None and signals["largest_commit_percent"] is None
+    assert signals["excluded_lines"] == 10
+
+
+@pytest.mark.parametrize(
+    ("path", "excluded"),
+    [
+        ("vendor/{old => new}/x.js", True),
+        ("{node_modules => lib}/x.js", False),
+        ("src/{a.py => b.py}", False),
+        ("old/x.js => node_modules/x.js", True),
+        ('"src/\\303\\261.py"', False),
+        ("web/Cargo.lock", True),
+    ],
+)
+def test_renamed_and_quoted_paths_use_the_new_name(path, excluded):
+    commits = read_history_from(header("a", "2026-11-01T10:00:00-06:00") + f"\n7\t0\t{path}\n")
+    assert commits[0].excluded_lines == (7 if excluded else 0)
+    assert commits[0].lines_added == (0 if excluded else 7)
+
+
+def test_merge_or_empty_commit_has_no_lines():
+    merge, first = header("m", "2026-11-02T10:00:00-06:00"), header("a", "2026-11-01T10:00:00-06:00")
+    log = f"{merge}\n{first}\n\n4\t0\ta.py\n"
+    commits = read_history_from(log)
+    assert [(c.hash, c.files_changed, c.lines_added) for c in commits] == [("m", 0, 0), ("a", 1, 4)]
+
+
+# --- point 1.2: authors compared with integrantes -------------------------------------------
+
+
+def test_authors_and_commits_per_author_compared_with_members():
+    signals = build_signals("equipo-01", EVENT, read_history_from(LOG), MEMBERS)
+    assert signals["author_count"] == 2 and signals["single_author"] is False
+    assert signals["authors"] == [
+        {"name": "Beto Ruiz", "github": "betoruiz", "member": True,
+         "commits": 2, "lines_added": 25, "lines_deleted": 5},
+        {"name": "Ana López", "github": "analopez", "member": True,
+         "commits": 1, "lines_added": 75, "lines_deleted": 0},
+    ]
+    assert signals["members"] == [
+        {"name": "Ana Lopez", "github": "analopez", "commits": 1},
+        {"name": "Beto Ruiz", "github": "betoruiz", "commits": 2},
+    ]
+    assert signals["members_without_commits"] == [] and signals["authors_not_members"] == 0
+    assert "beto@example.org" not in json.dumps(signals) and "noreply" not in json.dumps(signals)
+
+
+def test_single_author_is_an_alert_and_missing_members_are_listed():
+    log = "\n".join(
+        [
+            header("b", "2026-11-02T10:00:00-06:00", who=("analopez", "ana@laptop.local")),
+            "1\t0\ta.py",
+            header("a", "2026-11-01T10:00:00-06:00"),
+            "1\t0\ta.py",
+        ]
+    )
+    signals = build_signals("equipo-01", EVENT, read_history_from(log), MEMBERS)
+    assert signals["author_count"] == 1 and signals["single_author"] is True
+    assert signals["authors"][0]["commits"] == 2
+    assert signals["members_without_commits"] == ["betoruiz"]
+    assert "ALERTA: un solo autor" in summarize(signals) and "betoruiz" in summarize(signals)
+
+
+def test_authors_without_members_list():
+    signals = build_signals("equipo-01", EVENT, read_history_from(LOG))
+    assert signals["members"] is None and signals["members_without_commits"] == []
+    assert signals["authors"][0]["github"] is None and signals["authors"][1]["github"] == "analopez"
+    assert all(row["member"] is False for row in signals["authors"])
+    assert signals["authors_not_members"] == 0
+
+
+def test_unknown_author_is_not_a_member():
+    log = header("a", "2026-11-01T10:00:00-06:00", who=("Carla", "carla@example.org")) + "\n1\t0\ta.py\n"
+    signals = build_signals("equipo-01", EVENT, read_history_from(log), MEMBERS)
+    assert signals["authors"][0]["member"] is False
+    assert signals["authors_not_members"] == 1
+    assert signals["members_without_commits"] == ["analopez", "betoruiz"]
+
+
+@pytest.mark.parametrize(
+    ("name", "email", "expected"),
+    [
+        ("whatever", "99+AnaLopez@users.noreply.github.com", "analopez"),
+        ("whatever", "analopez@users.noreply.github.com", "analopez"),
+        ("BetoRuiz", "x@example.org", "betoruiz"),
+        ("  ANA   lópez ", "x@example.org", "analopez"),
+        ("Ana", "ana@example.org", None),
+        ("", "", None),
+    ],
+)
+def test_match_member(name, email, expected):
+    member = match_member(name, email, MEMBERS)
+    assert (member.github if member else None) == expected
 
 
 def read_history_from(log: str):
@@ -225,6 +400,27 @@ def test_cli_git_signals_all(tmp_path, monkeypatch, capsys):
     assert "equipo-01: 3 commit(s), 1 antes del inicio, 1 después del cierre" in out
     assert "equipo-02: sin historial de git" in out
     assert (tmp_path / "reports" / "equipo-02" / "git-signals.json").is_file()
+
+
+def test_cli_git_signals_compares_with_integrantes(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(git_signals.subprocess, "run", FakeGit())
+    make_repo(tmp_path, "equipo-01")
+    config = write_config(tmp_path, ["equipo-01"])
+    data = yaml.safe_load(config.read_text(encoding="utf-8"))
+    data["equipos"][0]["integrantes"] = [
+        {"nombre": "Ana López", "github": "analopez"},
+        {"nombre": "Caro Paz", "github": "caropaz"},
+    ]
+    config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    assert main(["--config", str(config), "git-signals"]) == EXIT_OK
+    out = capsys.readouterr().out
+    assert "2 autor(es), 75.0% del código en el commit más grande" in out
+    assert "integrantes sin commits: caropaz" in out
+    saved = json.loads((tmp_path / "reports" / "equipo-01" / "git-signals.json").read_text(encoding="utf-8"))
+    assert saved["schema_version"] == 2
+    assert saved["members"][0] == {"name": "Ana López", "github": "analopez", "commits": 1}
+    assert saved["authors_not_members"] == 1
 
 
 def test_cli_git_signals_one_team_and_continue_on_error(tmp_path, monkeypatch, capsys):
