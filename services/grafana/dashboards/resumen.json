@@ -67,10 +67,81 @@
       "id": 1,
       "type": "text",
       "title": "1. Resumen",
-      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
       "options": {
         "mode": "markdown",
-        "content": "**Comparar a todos los equipos.** Los paneles de esta página llegan con PB-18 (SPEC.md, sección \"1. Resumen\")."
+        "content": "**Comparar a todos los equipos.** El estado del análisis sale de `reports/status.json` (`acr analyze`). Los demás paneles de esta página llegan con PB-18 (SPEC.md, sección \"1. Resumen\")."
+      }
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Estado del análisis",
+      "description": "Por equipo: pendiente / obteniendo / analizando / listo / error y hora de la última corrida (orquestador, reports/status.json).",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 3},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/status.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "id", "text": "Equipo", "type": "string"},
+            {"selector": "nombre", "text": "Nombre", "type": "string"},
+            {"selector": "state", "text": "Estado", "type": "string"},
+            {"selector": "finished_at", "text": "Última corrida", "type": "timestamp"}
+          ],
+          "filterExpression": "id IN (${equipo:singlequote})"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin datos", "custom": {"align": "auto", "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Estado"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pendiente": {"text": "pendiente", "color": "text", "index": 0},
+                      "obteniendo": {"text": "obteniendo", "color": "blue", "index": 1},
+                      "analizando": {"text": "analizando", "color": "yellow", "index": 2},
+                      "listo": {"text": "listo", "color": "green", "index": 3},
+                      "error": {"text": "error", "color": "red", "index": 4}
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Última corrida"},
+            "properties": [
+              {"id": "unit", "value": "dateTimeAsLocal"},
+              {"id": "mappings", "value": [{"type": "special", "options": {"match": "null", "result": {"text": "sin corrida", "index": 0}}}]}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{"displayName": "Equipo", "desc": false}],
+        "footer": {"show": false, "reducer": ["count"], "countRows": false}
       }
     }
   ]
