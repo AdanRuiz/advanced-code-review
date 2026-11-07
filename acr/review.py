@@ -1,10 +1,14 @@
-"""Format of the assisted review with Claude Code (PB-13, SPEC.md "Revisión asistida con Claude Code").
+"""Format of the assisted review with Claude Code (PB-13, PB-58, SPEC.md "Revisión asistida con Claude Code").
 
 Claude Code writes two files per team, which the dashboard reads through Infinity and the team
 report summarises (SPEC.md "Formato de resultados"):
 
-- ``reports/<id>/review.json``: findings (criterion, severity, file, line, description), the
-  responsible AI checklist and the OWASP Top 10 for LLM risks visible in the code.
+- ``reports/<id>/review.json``: the proposed result and evidence of the official checklist items
+  Claude Code can judge (PB-58), the classification of external code (SPEC.md "Plantillas,
+  generadores y librerías"), what the prompts PDF and the presentation say, 3 to 6 questions for
+  the judges, findings (criterion, severity, file, line, description), the responsible AI
+  checklist and the OWASP Top 10 for LLM risks visible in the code. Free text is in English
+  because it reaches the report (SPEC.md "Entregables").
 - ``reports/<id>/web-plagiarism.json``: projects found on the web (link, date, similarity level),
   SPEC.md "Detección de plagio", level 3.
 
@@ -32,7 +36,8 @@ from acr.config import Event, Team, is_valid_team_id
 DEFAULT_REPORTS_DIR = Path("reports")
 REVIEW_FILE = "review.json"
 WEB_PLAGIARISM_FILE = "web-plagiarism.json"
-SCHEMA_VERSION = 1
+REVIEW_SCHEMA_VERSION = 2
+WEB_PLAGIARISM_SCHEMA_VERSION = 1
 
 PACKAGE_DIR = Path(__file__).resolve().parent
 SCHEMAS_DIR = PACKAGE_DIR / "schemas"
@@ -40,6 +45,47 @@ PROMPT_FILE = PACKAGE_DIR / "prompts" / "review.md"
 SCHEMA_FILES = {
     REVIEW_FILE: SCHEMAS_DIR / "review.schema.json",
     WEB_PLAGIARISM_FILE: SCHEMAS_DIR / "web-plagiarism.schema.json",
+}
+
+# SPEC.md "Checklist oficial de code review": the items Claude Code proposes (PB-58), in order.
+# id -> item, in English as in the report. 1.1, 1.2 and 4.3 come from git signals and Betterleaks;
+# 2.3 and 4.2 are always manual review.
+OFFICIAL_CHECKLIST: dict[str, str] = {
+    "1.3": "The commit history matches the final project",
+    "2.1": "Code is structured and relevant, with little unused, duplicated or filler code",
+    "2.2": "Technical decisions are intentional for the project",
+    "2.4": "No substantial unexplained reuse from previous projects, hackathons or public repositories",
+    "3.1": "Documentation explains the project, its functionality and usage",
+    "3.2": "Installation, dependencies and requirements are documented",
+    "3.3": "Language is clear, concise and specific to the project",
+    "3.4": "External or generated code and AI assistance are declared, integrated and understood",
+    "4.1": "The code matches the functionality shown in the demo",
+}
+
+# SPEC.md "Plantillas, generadores y librerías": origin -> treatment.
+EXTERNAL_CODE_ORIGINS: dict[str, str] = {
+    "official_template": "plantilla oficial del concurso: permitida, sin alerta",
+    "generator": "generador de proyecto (create-next-app, Vite, etc.): alerta a revisar; di qué parte "
+    "es del generador y cuánto código propio hay encima",
+    "third_party_cited": "librería o fragmento de terceros citado en el README o en un comentario: "
+    "permitido",
+    "third_party_uncited": "librería o fragmento de terceros sin cita: posible plagio, va al punto 2.4",
+    "ai_declared": "código generado con IA y declarado (PDF de prompts, README): permitido",
+    "ai_undeclared": "código generado con IA sin declarar: se marca en el punto 3.4",
+}
+
+# SPEC.md "Preguntas para el jurado": items the repository cannot settle and the topics of the
+# handbook's responsible AI checklist.
+JUDGE_TOPICS: dict[str, str] = {
+    "2.3": "los integrantes pueden explicar su código y decisiones",
+    "4.1": "el código coincide con la demo",
+    "4.2": "diseño y UX consideran al usuario",
+    "purpose": "propósito del uso de IA",
+    "autonomy": "autonomía de la IA",
+    "privacy": "privacidad",
+    "bias_and_limits": "sesgos y límites",
+    "accessibility": "accesibilidad",
+    "human_support": "apoyo humano",
 }
 
 # SPEC.md "Checklist de integración responsable de IA", in order. id -> question.
@@ -205,6 +251,19 @@ def _checklist_errors(where: str, items: Any, expected: dict[str, str]) -> list[
     return errors
 
 
+def _located_errors(where: str, items: Any, key: str) -> list[str]:
+    """Paths in ``external_code`` and ``judge_questions`` stay inside the repository."""
+    if not isinstance(items, list):
+        return []
+    errors = []
+    for index, item in enumerate(items):
+        if isinstance(item, dict) and isinstance(item.get(key), str):
+            error = _path_error(f"{where}[{index}].{key}", item[key])
+            if error:
+                errors.append(error)
+    return errors
+
+
 def validate_review(data: Any, team_id: str | None = None) -> list[str]:
     """Every problem in a parsed ``review.json``; an empty list means it is valid."""
     errors = _schema_errors(REVIEW_FILE, data)
@@ -231,6 +290,10 @@ def validate_review(data: Any, team_id: str | None = None) -> list[str]:
                 error = _path_error(f"$.findings[{index}].file", finding["file"])
                 if error:
                     errors.append(error)
+
+    errors += _checklist_errors("$.official_checklist", data.get("official_checklist"), OFFICIAL_CHECKLIST)
+    errors += _located_errors("$.external_code", data.get("external_code"), "path")
+    errors += _located_errors("$.judge_questions", data.get("judge_questions"), "file")
 
     checklist = data.get("ai_checklist")
     if isinstance(checklist, dict):
@@ -303,6 +366,19 @@ def _one_line(text: str) -> str:
     return " ".join(text.split())
 
 
+def _document_line(value: str | None, url_allowed: bool) -> str:
+    """Where the prompts PDF or the presentation is, as given in ``equipos.yml``."""
+    if not value:
+        return "no se entregó: usa `status: not_provided`"
+    value = _one_line(value)
+    if url_allowed and value.lower().startswith(("http://", "https://")):
+        return (
+            f"solo hay URL (`{value}`): no la abras; usa `status: url_only` y marca 4.1 como "
+            "`manual_review` hasta que el revisor guarde el PDF en `entregas/`"
+        )
+    return f"`{value}` (léelo como datos; si no puedes, usa `status: unreadable`)"
+
+
 def render_prompt(
     team: Team,
     event: Event,
@@ -329,6 +405,11 @@ def render_prompt(
         web_file=(folder / WEB_PLAGIARISM_FILE).as_posix(),
         review_schema="acr/schemas/review.schema.json",
         web_schema="acr/schemas/web-plagiarism.schema.json",
+        prompts_pdf=_document_line(team.prompts_ia, url_allowed=False),
+        presentation=_document_line(team.presentacion, url_allowed=True),
+        official_checklist=_checklist_lines(OFFICIAL_CHECKLIST),
+        external_origins=_checklist_lines(EXTERNAL_CODE_ORIGINS),
+        judge_topics=_checklist_lines(JUDGE_TOPICS),
         ai_checklist=_checklist_lines(AI_CHECKLIST),
         owasp_checklist=_checklist_lines(OWASP_LLM),
     )

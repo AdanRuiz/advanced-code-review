@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/AdanRuiz/advanced-code-review/acr/schemas/review.schema.json",
   "title": "reports/<id>/review.json",
-  "description": "Revisión asistida con Claude Code (PB-13, SPEC.md \"Revisión asistida con Claude Code\" y \"Formato de resultados\"). Borrador que valida el revisor.",
+  "description": "Revisión asistida con Claude Code (PB-13, PB-58; SPEC.md \"Revisión asistida con Claude Code\", \"Plantillas, generadores y librerías\" y \"Formato de resultados\"). Borrador que valida el revisor. Los textos libres van en inglés porque llegan al reporte.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,12 +12,16 @@
     "generated_at",
     "status",
     "summary",
+    "official_checklist",
+    "external_code",
+    "documents",
+    "judge_questions",
     "findings",
     "ai_checklist",
     "owasp_llm"
   ],
   "properties": {
-    "schema_version": { "const": 1 },
+    "schema_version": { "const": 2 },
     "team_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
     "tool": { "const": "claude-code" },
     "generated_at": {
@@ -29,7 +33,38 @@
       "enum": ["draft", "validated"],
       "description": "draft: lo escribió Claude Code; validated: el revisor lo revisó"
     },
-    "summary": { "type": "string", "minLength": 1 },
+    "summary": { "type": "string", "minLength": 1, "description": "In English" },
+    "official_checklist": {
+      "type": "array",
+      "description": "Puntos 1.3, 2.1, 2.2, 2.4, 3.1-3.4 y 4.1 del checklist oficial, cada uno exactamente una vez",
+      "items": { "$ref": "#/$defs/official_item" }
+    },
+    "external_code": {
+      "type": "array",
+      "description": "Código externo o generado, clasificado según \"Plantillas, generadores y librerías\"",
+      "items": { "$ref": "#/$defs/external_code" }
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prompts_pdf", "presentation"],
+      "properties": {
+        "prompts_pdf": {
+          "$ref": "#/$defs/document",
+          "description": "PDF de prompts de IA (prompts_ia), punto 3.4"
+        },
+        "presentation": {
+          "$ref": "#/$defs/document",
+          "description": "Presentación (presentacion), punto 4.1"
+        }
+      }
+    },
+    "judge_questions": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 6,
+      "items": { "$ref": "#/$defs/judge_question" }
+    },
     "findings": {
       "type": "array",
       "items": { "$ref": "#/$defs/finding" }
@@ -64,6 +99,109 @@
       "additionalProperties": false,
       "required": ["file", "line"],
       "properties": {
+        "file": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Ruta relativa a la raíz del repositorio, con /"
+        },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "official_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "result", "notes", "evidence"],
+      "properties": {
+        "id": { "enum": ["1.3", "2.1", "2.2", "2.4", "3.1", "3.2", "3.3", "3.4", "4.1"] },
+        "result": {
+          "enum": ["pass", "fail", "manual_review"],
+          "description": "pass (cumple), fail (no cumple), manual_review (revisión manual)"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Evidencia en inglés: qué se revisó y por qué la marca"
+        },
+        "evidence": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/location" }
+        }
+      }
+    },
+    "external_code": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "origin", "notes"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Archivo o carpeta relativa a la raíz del repositorio, con /"
+        },
+        "origin": {
+          "enum": [
+            "official_template",
+            "generator",
+            "third_party_cited",
+            "third_party_uncited",
+            "ai_declared",
+            "ai_undeclared"
+          ],
+          "description": "Plantilla oficial / generador / tercero citado o no / IA declarada o no"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Plantilla, generador, proyecto o herramienta de IA de origen"
+        },
+        "url": { "type": "string", "pattern": "^https?://" },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Evidencia en inglés: dónde se cita o declara, o por qué no"
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "notes"],
+      "properties": {
+        "status": {
+          "enum": ["read", "not_provided", "url_only", "unreadable"],
+          "description": "read: se leyó; not_provided: no está en equipos.yml; url_only: solo hay URL, falta el PDF; unreadable: no se pudo leer"
+        },
+        "notes": {
+          "type": "string",
+          "minLength": 1,
+          "description": "En inglés: lo que importa para el punto 3.4 o 4.1"
+        }
+      }
+    },
+    "judge_question": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["topic", "question", "file", "line"],
+      "properties": {
+        "topic": {
+          "enum": [
+            "2.3",
+            "4.1",
+            "4.2",
+            "purpose",
+            "autonomy",
+            "privacy",
+            "bias_and_limits",
+            "accessibility",
+            "human_support"
+          ],
+          "description": "Punto del checklist (2.3, 4.1, 4.2) o tema de la Lista de verificación de IA responsable del manual"
+        },
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Pregunta concreta en inglés"
+        },
         "file": {
           "type": "string",
           "minLength": 1,
