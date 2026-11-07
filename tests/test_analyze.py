@@ -400,6 +400,10 @@ def test_cli_analyze_all(tmp_path, monkeypatch, capsys, fake_tools):
     assert "-> reports/security.json" in out
     security = json.loads((tmp_path / "reports" / "security.json").read_text(encoding="utf-8"))
     assert [team["team"] for team in security["teams"]] == ["equipo-01", "equipo-02"]
+    # PB-22: and the Plagio page data.
+    assert "-> reports/plagiarism.json" in out
+    plagiarism = json.loads((tmp_path / "reports" / "plagiarism.json").read_text(encoding="utf-8"))
+    assert [team["team"] for team in plagiarism["teams"]] == ["equipo-01", "equipo-02"]
 
 
 def test_cli_analyze_one_team_and_errors(tmp_path, monkeypatch, capsys, fake_tools):
