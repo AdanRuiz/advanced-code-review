@@ -43,21 +43,38 @@ Cada punto se marca como **cumple**, **no cumple** o **revisión manual**, con s
 | # | Punto del checklist | Evidencia | Herramienta | Automatizable |
 | --- | --- | --- | --- | --- |
 | 1.1 | Commits con iteración significativa, sin cargas masivas sin explicar | Número de commits, tamaño de cada commit, % del código en el commit más grande | Señales de git | Sí |
-| 1.2 | Evidencia de colaboración del equipo | Autores distintos y commits por autor, comparados con `integrantes` | Señales de git | Sí |
+| 1.2 | Evidencia de colaboración del equipo | Autores distintos y commits por autor, comparados con `integrantes`; un solo autor es alerta (las reglas exigen 2 o más integrantes) | Señales de git | Sí |
 | 1.3 | El historial coincide con el proyecto final | Evolución del historial frente al código final | Claude Code | Parcial |
 | 2.1 | Código estructurado y relevante, con poco código sin usar, duplicado o de relleno | Duplicados, código muerto, TODO, *lorem ipsum*, *placeholders* | MegaLinter (incluye jscpd) + Claude Code | Parcial |
 | 2.2 | Decisiones técnicas intencionales para el proyecto | Arquitectura y elecciones de librerías | Claude Code | Parcial |
 | 2.3 | Los integrantes pueden explicar su código y decisiones | — | — | No: revisión manual |
 | 2.4 | Sin reutilización sustancial sin explicar de proyectos previos, hackathons o repositorios públicos | Coincidencias externas, similitud entre equipos, ideas en la web, commits previos al sprint | SCANOSS, Dolos, Claude Code + búsqueda web, señales de git | Parcial |
-| 3.1 | La documentación explica el proyecto, su funcionalidad y uso | README (obligatorio en la entrega) | Claude Code + markdownlint (MegaLinter) | Parcial |
+| 3.1 | La documentación explica el proyecto, su funcionalidad y uso | README (obligatorio en la entrega) y comentarios del código claros (criterio "Documentación" del manual) | Claude Code + markdownlint (MegaLinter) | Parcial |
 | 3.2 | Instalación, dependencias y requisitos documentados | README y archivos de dependencias | Claude Code | Parcial |
 | 3.3 | Lenguaje claro, conciso y específico del proyecto | README | Claude Code | Parcial |
-| 3.4 | Código externo o generado y asistencia de IA declarados, integrados y entendidos | Declaración en README y PDF de prompts, frente a lo encontrado por SCANOSS y la búsqueda web | Claude Code | Parcial |
-| 4.1 | El código coincide con la funcionalidad de la demo | Funciones descritas en la presentación frente al código | Claude Code (con `presentacion`) o revisión manual | Parcial |
+| 3.4 | Código externo o generado y asistencia de IA declarados, integrados y entendidos | Declaración en README y PDF de prompts, frente a lo encontrado por SCANOSS y la búsqueda web; clasificación de código externo (ver [Plantillas, generadores y librerías](#plantillas-generadores-y-librerías)) | Claude Code | Parcial |
+| 4.1 | El código coincide con la funcionalidad de la demo | Funciones descritas en la presentación (PDF exportado en `entregas/`) frente al código | Claude Code (con `presentacion`) o revisión manual | Parcial |
 | 4.2 | Diseño y UX consideran al usuario | — | — | No: revisión manual |
 | 4.3 | Sin API keys, secretos, credenciales ni datos privados en el repositorio | Hallazgos con historial de git, sin mostrar el valor | Betterleaks (MegaLinter) | Sí |
 
 Toda marca automática es un borrador: la valida el revisor.
+
+Los criterios del manual del concurso (*2026 NA AI Challenge Handbook*) para la revisión de código coinciden con este checklist: **autenticidad y limpieza** (estructura, legibilidad, esfuerzo original), **documentación** (comentarios del código claros) y **atribución** (cita explícita de librerías externas, fragmentos de otras fuentes y código generado con IA).
+
+## Calendario del evento
+
+Fuente: manual del concurso y respuestas de los organizadores. Hora de México (UTC−6, sin horario de verano).
+
+| Fecha | Hito | Uso en el framework |
+| --- | --- | --- |
+| 24 oct, 16:30 | Inicio del sprint (fin del *kickoff*, 15:30 hora de Arizona) | `evento.inicio: 2026-10-24T16:30:00-06:00` |
+| 5 nov, 23:59 | Cierre de la entrega final | `evento.fin: 2026-11-05T23:59:00-06:00` |
+| 6–7 nov | Launchpads (pitch y demo en vivo) | Se recibe todo después del 7 nov a las 12:40 |
+| 7–9 nov | Revisión de código | 4 equipos |
+| 9 nov (noche) o 10 nov (mañana) | Entrega de las revisiones a los organizadores | Reportes en inglés (PDF + ZIP) |
+| 10 nov | Aviso a finalistas | Los organizadores pueden ajustar el ranking con la revisión |
+
+Si los organizadores toman el cierre en hora de Arizona (UTC−7), sería el 6 nov a las 00:59 de México: los commits en esa hora se reportan con su hora exacta para que el revisor decida.
 
 ## Arquitectura y flujo
 
@@ -123,7 +140,7 @@ equipos:
 | `equipos[].repo` | Sí | URL git, carpeta local o archivo ZIP |
 | `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último commit de la rama anterior a `evento.fin` |
 | `equipos[].integrantes` | No | Nombre y usuario de GitHub de cada integrante; se comparan con los autores de los commits (punto 1.2) |
-| `equipos[].presentacion` | No | URL de la presentación entregada; se compara con el código (punto 4.1) |
+| `equipos[].presentacion` | No | URL de la presentación entregada o ruta local a su PDF exportado en `entregas/`; se compara con el código (punto 4.1) |
 | `equipos[].prompts_ia` | No | Ruta local al PDF de prompts de IA entregado; se compara con lo declarado (punto 3.4) |
 
 **Reglas:**
@@ -382,8 +399,21 @@ El plagio se revisa en tres niveles y alimenta el punto 2.4 del checklist. Una c
 - El trabajo debe ser original y hecho durante el sprint de dos semanas: **no se permite código previo**.
 - **Se permite usar IA y recursos externos**, pero el código no puede ser íntegramente generado por IA: una persona del equipo lo revisa, lo valida y puede explicarlo. El uso de IA y de código externo se declara (punto 3.4).
 - Una **semejanza sustancial** con un proyecto de otro hackatón o con un repositorio público **descalifica** al equipo.
-- El reporte presenta evidencia (enlaces, porcentajes, historial de commits), no un veredicto.
-- Pendiente: si las plantillas, los generadores de proyecto y el *boilerplate* cuentan como código previo (ver [Riesgos y pendientes](#riesgos-y-pendientes)).
+- El reporte presenta evidencia (enlaces, porcentajes, historial de commits), no un veredicto. Ante similitudes marcadas, el revisor entrega esa evidencia a los organizadores, que deciden si hay sanción (protocolo acordado).
+- Cada equipo tiene 2 o más integrantes: un repositorio con un solo autor es una alerta del punto 1.2.
+
+### Plantillas, generadores y librerías
+
+Respuesta de Arizona State University. Las marcas son orientativas: se conversan con los organizadores, que pueden subir o bajar una alerta.
+
+| Origen del código | Tratamiento | Marca en el reporte |
+| --- | --- | --- |
+| Plantillas oficiales del concurso | Permitidas | Sin alerta; se identifica como plantilla oficial |
+| Generadores de proyecto (`create-next-app`, Vite, etc.) | Generan dudas | Alerta a revisar: qué parte del repo es del generador y cuánto código propio hay encima |
+| Librerías y fragmentos de terceros | Permitidos si se dan crédito y se citan | Sin cita (README o comentario): posible plagio, va al punto 2.4 con su evidencia |
+| Código generado con IA | Permitido si se declara (PDF de prompts, README) | Sin declaración: se marca en el punto 3.4 |
+
+Las dependencias instaladas por gestor de paquetes (`node_modules/`, *lockfiles*) no cuentan como código del equipo; las librerías copiadas dentro del repositorio sí se revisan.
 
 | Nivel | Herramienta | Qué detecta | Entrada |
 | --- | --- | --- | --- |
@@ -425,37 +455,49 @@ Claude Code cubre lo que las herramientas no miden: arquitectura, factibilidad y
 - [ ] Agencia excesiva: ¿el modelo puede ejecutar acciones (herramientas, APIs, archivos) sin confirmación humana?
 - [ ] Consumo sin límite: ¿hay límites de tokens, de peticiones o de costo?
 
-**Salida:** sección cualitativa del reporte por equipo, con referencias `archivo:línea` para cada hallazgo.
+**Puntos del checklist oficial:** propone la marca (cumple / no cumple / revisión manual) y la evidencia de los puntos 1.3, 2.1, 2.2, 2.4, 3.1–3.4 y 4.1. Lee el PDF de prompts (`prompts_ia`) y la presentación (`presentacion`) cuando existen, y clasifica el código externo según [Plantillas, generadores y librerías](#plantillas-generadores-y-librerías).
+
+**Preguntas para el jurado:** 3 a 6 preguntas por equipo, concretas y con `archivo:línea`, para los puntos que el repositorio no resuelve (2.3, 4.1, 4.2) y para la *Lista de verificación de IA responsable* del manual, que el equipo debe poder explicar: propósito, autonomía, privacidad, sesgos y límites, accesibilidad y apoyo humano. Los organizadores las comparten con el jurado.
+
+**Salida:** `review.json` en inglés (los textos que llegan al reporte), con referencias `archivo:línea` para cada hallazgo.
 
 ## Entregables
 
-Jueces y organizadores reciben un reporte por equipo en PDF y Markdown, y un ZIP con todos; el dashboard de Grafana queda como herramienta local del revisor.
+Jueces y organizadores reciben un reporte por equipo **en inglés** (idioma oficial del concurso), en PDF y Markdown, y un ZIP con todos; el dashboard de Grafana queda como herramienta local del revisor. Si los organizadores piden capturar el checklist en Airtable, el reporte es la fuente de la captura.
 
-**Plantilla del reporte por equipo:**
+**Plantilla del reporte por equipo** (sigue el checklist oficial; los hallazgos de seguridad que el checklist no pide van como recomendaciones formativas que no puntúan):
 
 ```markdown
-# Reporte de revisión – <Equipo> – <Proyecto>
+# Code Review Report – <Team> – <Project>
 
-## Resumen
-- Lenguajes y tamaño (scc):
-- Enlace al dashboard (Grafana):
-- Hallazgos críticos:
+## Summary
+- Languages and size (scc):
+- Checklist: <n> pass · <n> fail · <n> manual review
+- Key findings:
 
-## Factibilidad técnica
-## Calidad del código
-## Seguridad
-- CVE críticas/altas con corrección disponible:
-- Código inseguro (CWE / OWASP Top 10):
-- Secretos expuestos:
-## Integración responsable de IA
-## Plagio
-- Código externo (SCANOSS):
-- Entre equipos (Dolos):
-- Ideas en la web:
-- Historial de git:
+## Official checklist
+| # | Item | Result | Evidence |
+(1.1 to 4.3: Pass / Fail / Manual review, with links and file:line)
 
-## Recomendaciones al equipo
+## Plagiarism and originality evidence
+- External code (SCANOSS): files, source project, license, link, cited or not
+- Between teams (Dolos): pairs and similarity %
+- Similar projects on the web: link, date, level
+- Git history: commits before/after the sprint, single commit, authors, fork
+- Templates, generators and third-party code: classification
+
+## Questions for the judges
+
+## Reviewer feedback
+
+## Technical annex (formative, not scored)
+- Dependencies with known vulnerabilities (CVE, fixed version)
+- Insecure code patterns (CWE / OWASP Top 10)
+- Code quality (MegaLinter grade A–E)
+- Responsible AI integration and OWASP LLM
 ```
+
+Además del reporte por equipo, el ZIP incluye `judge-questions.md` con las preguntas de todos los equipos.
 
 ## Entorno, seguridad y privacidad
 
@@ -490,18 +532,21 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 | ¿Hay rúbrica oficial? | Para la revisión de código, el *Technical Code Review Checklist* (ver [Checklist oficial](#checklist-oficial-de-code-review)). La rúbrica de 10 criterios y 50 puntos es para el pitch y la usan los jueces |
 | ¿Por qué canal se entregan los reportes? | Las calificaciones se capturan en Airtable; los jueces reciben por correo el enlace a sus hojas unas 48 horas antes del evento |
 | ¿La seguridad es un criterio aparte? | No. Solo se exige que el repo no tenga información privada ni API keys (punto 4.3) |
+| ¿Se permite la IA si se declara? ¿El revisor ve el PDF de prompts? | Sí, y el revisor recibe los PDF y la documentación de cada equipo |
+| ¿Plantillas, generadores y librerías cuentan como código previo? | Ver [Plantillas, generadores y librerías](#plantillas-generadores-y-librerías) (respuesta de ASU) |
+| Fechas del sprint | Ver [Calendario del evento](#calendario-del-evento) |
+| ¿Sesión de preguntas o acceso a la demo? | Se comparten las presentaciones de los pitches; el revisor prepara preguntas para el jurado |
+| ¿Formato e idioma del reporte? | En inglés |
+| ¿Hallazgos de seguridad adicionales (CVE, CWE)? | Sí, como recomendaciones técnicas formativas que no puntúan |
+| ¿Protocolo ante plagio? | El revisor entrega la evidencia (enlaces, porcentajes, historial de commits); los organizadores deciden |
+| ¿Cuántos equipos y para cuándo? | 4 equipos; revisiones listas el 9 nov en la noche o el 10 nov en la mañana |
 
 **Pendientes con los organizadores:**
 
-- [ ] ¿Se confirma que la IA y los recursos externos se permiten si se declaran y el equipo los entiende? ¿Puede el revisor consultar el PDF de prompts de IA?
-- [ ] ¿Las plantillas, generadores de proyecto (por ejemplo, `create-next-app`) y librerías cuentan como código previo?
-- [ ] Fecha y hora de inicio del sprint y zona horaria del cierre (5 de noviembre, 11:59 p.m.), para `evento.inicio` y `evento.fin`.
-- [ ] ¿Exportación CSV de Airtable con equipo, proyecto, repo, presentación e integrantes con usuario de GitHub?
-- [ ] ¿Hay sesión de preguntas con los equipos o acceso a la presentación o al video de la demo (puntos 2.3 y 4.1)?
-- [ ] ¿El revisor captura el checklist en Airtable o entrega un reporte por equipo? ¿En inglés o en español?
-- [ ] ¿Se incluyen los hallazgos de seguridad adicionales (CVE, CWE) como recomendaciones que no puntúan, o se omiten?
-- [ ] ¿Se confirma que el revisor solo aporta evidencia de plagio y la descalificación la deciden los organizadores?
-- [ ] ¿Cuántos equipos son y para qué fecha se necesitan las revisiones?
+- [ ] Acceso a Airtable o export con equipo, proyecto, repo, presentación e integrantes con usuario de GitHub.
+- [ ] ¿El checklist se captura también en Airtable o basta el reporte PDF?
+- [ ] ¿Habrá grabaciones de los pitches (puntos 2.3 y 4.1)?
+- [ ] Confirmar el cierre: el manual dice 11:59 p.m. del 5 nov y la respuesta dice 11:59 a.m.; se asume p.m. hora de México.
 
 ## Fuentes
 
