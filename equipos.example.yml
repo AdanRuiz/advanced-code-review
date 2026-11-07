@@ -16,11 +16,12 @@ equipos:
     repo: https://github.com/org/proyecto-alfa
     rama: main                         # opcional
     commit: a1b2c3d                    # opcional: congela la versión entregada
-    integrantes:                       # opcional: evidencia de colaboración
+    integrantes:                       # opcional: evidencia de colaboración (punto 1.2)
       - nombre: "Ana López"
-        github: analopez
-    presentacion: https://docs.google.com/presentation/d/ejemplo   # opcional
-    prompts_ia: C:/entregas/alfa-prompts.pdf                       # opcional
+        github: analopez               # usuario de GitHub, sin @ ni URL
+    presentacion: https://docs.google.com/presentation/d/ejemplo   # opcional: URL o PDF local (punto 4.1)
+    # prompts_ia: entregas/alfa-prompts.pdf   # opcional: PDF local que debe existir (punto 3.4)
+    # Las rutas relativas se resuelven desde la carpeta de equipos.yml.
 
   # Carpeta local
   - id: equipo-02

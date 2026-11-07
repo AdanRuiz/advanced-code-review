@@ -13,7 +13,7 @@ from pathlib import Path
 from acr import __version__
 from acr.analyze import STATUS_FILE, default_dolos, default_steps, run_analysis
 from acr.analyze import Options as AnalyzeOptions
-from acr.config import Config, Team, load_config
+from acr.config import Config, Team, load_config, missing_checklist_fields
 from acr.dolos import DolosError, write_dolos
 from acr.export import ExportError, write_pdf, write_zip
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
@@ -40,7 +40,10 @@ EXIT_ERROR = 1
 
 
 def _validate(args: argparse.Namespace) -> int:
-    """PB-5: report every problem in the input file; exit 1 if there is any."""
+    """PB-5, PB-56: report every problem in the input file; exit 1 if there is any.
+
+    Missing checklist fields (integrantes, presentacion, prompts_ia) are warnings: exit stays 0.
+    """
     config, errors = load_config(args.config)
     if config is None or errors:
         print(f"{args.config}: {len(errors)} error(es)", file=sys.stderr)
@@ -48,6 +51,11 @@ def _validate(args: argparse.Namespace) -> int:
             print(f"  - {error}", file=sys.stderr)
         return EXIT_ERROR
     print(f"{args.config}: válido ({config.evento.nombre}, {len(config.equipos)} equipo(s)).")
+    warnings = missing_checklist_fields(config)
+    if warnings:
+        print(f"{args.config}: {len(warnings)} aviso(s)", file=sys.stderr)
+        for warning in warnings:
+            print(f"  - {warning}", file=sys.stderr)
     return EXIT_OK
 
 

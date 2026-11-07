@@ -70,6 +70,14 @@ python -m acr --config otro.yml ...  # usa otro archivo de entrada
 
 `acr validate` revisa `equipos.yml` y lista todos los errores a la vez (campos faltantes, `id` inválidos o repetidos, fechas mal formadas o `fin` anterior a `inicio`); sale con código 0 si el archivo es válido y 1 si no.
 
+También valida los campos del checklist cuando están presentes (PB-56):
+
+- `integrantes`: lista con `nombre` y `github` de cada integrante. El usuario de GitHub va sin `@` ni URL y no puede repetirse.
+- `presentacion`: URL `http(s)://` o ruta a un PDF local.
+- `prompts_ia`: ruta a un PDF local.
+
+Cada PDF local debe existir y empezar con la firma `%PDF-`. Las rutas relativas se resuelven desde la carpeta de `equipos.yml`. Si a un equipo le falta alguno de estos campos, `acr validate` muestra un aviso con el punto del checklist que quedará en revisión manual (1.2, 4.1 o 3.4). Los avisos no cambian el código de salida.
+
 `acr fetch` deja cada equipo en `repos/<id>` según su `repo`:
 
 - **URL git** (`https://`, `http://`, `ssh://`, `git://` o `usuario@host:ruta`): `git clone` con historial completo, en la rama `rama` si se indica y fijado en `commit` si se indica. Usa las credenciales de git del revisor; los enlaces simbólicos se obtienen como archivos normales. Otros esquemas (`file://`, `ext::`) se rechazan.
