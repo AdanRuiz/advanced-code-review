@@ -26,6 +26,7 @@ from acr.config import Config, Team, is_valid_team_id
 from acr.dolos import DolosError, write_dolos
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
+from acr.git_signals import summarize as summarize_git_signals
 from acr.megalinter import DEFAULT_IMAGE, DEFAULT_TIMEOUT_SECONDS, MegaLinterError, run_megalinter
 from acr.scanoss import ScanossError, write_scanoss
 from acr.scc import SccError, write_scc
@@ -236,14 +237,8 @@ def default_steps(config: Config, options: Options) -> list[tuple[str, Step]]:
         return f"{result.kind} -> {result.path.as_posix()}"
 
     def git_signals(team: Team) -> str:
-        path, signals = write_git_signals(team.id, config.evento, repos, reports)
-        if not signals["has_git"]:
-            return f"sin historial de git -> {path.as_posix()}"
-        outside = signals["outside_event"]
-        return (
-            f"{signals['commit_count']} commit(s), {outside['before_start']} antes del inicio, "
-            f"{outside['after_end']} después del cierre -> {path.as_posix()}"
-        )
+        path, signals = write_git_signals(team.id, config.evento, repos, reports, members=team.integrantes)
+        return f"{summarize_git_signals(signals)} -> {path.as_posix()}"
 
     def scc(team: Team) -> str:
         path, report = write_scc(team.id, repos, reports)

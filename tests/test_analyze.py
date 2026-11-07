@@ -318,10 +318,12 @@ def fake_tools(monkeypatch):
         (repos_dir / team.id).mkdir(parents=True, exist_ok=True)
         return FetchResult(team_id=team.id, kind="git", path=repos_dir / team.id)
 
-    def write_git_signals(team_id, event, repos_dir, reports_dir):
+    def write_git_signals(team_id, event, repos_dir, reports_dir, *, members):
         calls.append(f"git-signals:{team_id}")
         return reports_dir / team_id / "git-signals.json", {
-            "has_git": True, "commit_count": 3, "outside_event": {"before_start": 0, "after_end": 1}
+            "has_git": True, "commit_count": 3, "outside_event": {"before_start": 0, "after_end": 1},
+            "author_count": 2, "single_author": False, "largest_commit_percent": 50.0,
+            "members_without_commits": [],
         }
 
     def write_scc(team_id, repos_dir, reports_dir):

@@ -53,7 +53,7 @@ Requiere Python 3.12 y las dependencias de `requirements-dev.txt`.
 python -m acr --help                 # lista los comandos
 python -m acr validate               # valida equipos.yml (PB-5)
 python -m acr fetch [ID]             # obtiene los repositorios en repos/<id> (PB-6)
-python -m acr git-signals [ID]       # señales del historial de git (PB-7)
+python -m acr git-signals [ID]       # señales del historial de git (PB-7, PB-57)
 python -m acr scc [ID]               # lenguajes, líneas y archivos con scc (PB-8)
 python -m acr megalinter [ID]        # calidad, Semgrep, Betterleaks y Trivy con MegaLinter (PB-9)
 python -m acr scanoss [ID]           # código open source conocido con SCANOSS, solo huellas (PB-10)
@@ -91,8 +91,11 @@ Cada PDF local debe existir y empezar con la firma `%PDF-`. Las rutas relativas 
 - `first_commit` y `last_commit` (hash, fecha de autor y fecha de commit), `commit_count` y `single_commit` (un solo commit con todo el código).
 - `outside_event`: cuántos commits quedan antes de `evento.inicio` (`before_start`) o después de `evento.fin` (`after_end`) y la lista de esos commits. Un commit cuenta si su fecha de autor **o** su fecha de commit cae fuera; así se detecta código previo aunque se haya rebasado durante el evento.
 - `has_git: false` si la carpeta o el ZIP no traen una carpeta `.git` propia (un archivo `.git` que apunta a otra ruta no se sigue).
+- Punto 1.1 (PB-57): `commits`, del más antiguo al más nuevo, con autor, archivos y líneas agregadas, borradas y cambiadas de cada commit; los totales `lines_added` y `lines_deleted`; y `largest_commit` / `largest_commit_percent`, el commit con más líneas agregadas y qué % de todas las líneas agregadas representa. Las líneas en carpetas de dependencias (`node_modules/`, `vendor/`…) y en *lockfiles* no cuentan como código del equipo: se reportan aparte en `excluded_lines`. Los binarios y los commits de *merge* no suman líneas.
+- Punto 1.2 (PB-57): `authors` con nombre, usuario de GitHub (si se conoce), si es integrante, commits y líneas de cada uno; `author_count` y `single_author` (**alerta**: las reglas piden 2 o más integrantes). Si el equipo tiene `integrantes` en `equipos.yml`, `members` da los commits de cada integrante, `members_without_commits` los que no tienen ninguno y `authors_not_members` cuántos autores no se reconocen. Un autor se reconoce como integrante por su usuario de GitHub (correo `…@users.noreply.github.com` o nombre de autor igual al usuario) o por su nombre completo, sin distinguir mayúsculas ni acentos.
+- `fork: null` (sin dato): un clon no dice si el repositorio es fork; saberlo requiere consultar la API de GitHub, una salida de red que la spec aún no contempla.
 
-Si `inicio`/`fin` no tienen zona horaria se toman en la hora local del revisor. No guarda mensajes, nombres ni correos de los autores. Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1).
+Si `inicio`/`fin` no tienen zona horaria se toman en la hora local del revisor. No guarda mensajes ni correos de los autores; los correos solo se usan para reconocer a los integrantes. Si un equipo falla (por ejemplo, aún no se obtuvo), se reporta y se sigue con los demás (código de salida 1).
 
 `acr scc` corre `scc --format json` sobre `repos/<id>` (solo cuenta líneas, no ejecuta el código) y escribe `reports/<id>/scc.json` con:
 
@@ -171,7 +174,7 @@ Un SARIF que falta o no se puede leer deja ese equipo en cero y se avisa. Usa el
 - `external_code` (`scanoss.json`): cada coincidencia con archivo, tipo (archivo completo o fragmento), %, proyecto de origen, licencias y enlace.
 - `web_matches` (`web-plagiarism.json`): cada proyecto encontrado con enlace, fuente, fecha, si es anterior al evento y nivel de parecido. Solo se lee si pasa el mismo validador que `acr review-validate`; si no, se omite y se avisa.
 
-Un archivo que falta o no se puede leer deja ese equipo en cero y se avisa. `git-signals.json` aún no detecta forks (PB-7), así que la columna Fork queda "sin dato". Una coincidencia indica similitud, no copia confirmada.
+Un archivo que falta o no se puede leer deja ese equipo en cero y se avisa. `git-signals.json` aún no detecta forks (ver `acr git-signals`), así que la columna Fork queda "sin dato". Una coincidencia indica similitud, no copia confirmada.
 
 La revisión asistida la hace el revisor con Claude Code (suscripción propia), equipo por equipo, después de `acr analyze`:
 
