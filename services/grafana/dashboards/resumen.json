@@ -70,7 +70,7 @@
       "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
       "options": {
         "mode": "markdown",
-        "content": "**Comparar a todos los equipos.** El estado del análisis sale de `reports/status.json` (`acr analyze`). Los demás paneles de esta página llegan con PB-18 (SPEC.md, sección \"1. Resumen\")."
+        "content": "**Comparar a todos los equipos.** El estado del análisis sale de `reports/status.json` (`acr analyze`) y las alertas de plagio de `reports/plagiarism.json` (`acr plagiarism` o `acr analyze`). Los demás paneles de esta página llegan con PB-18 (SPEC.md, sección \"1. Resumen\")."
       }
     },
     {
@@ -129,6 +129,77 @@
             "properties": [
               {"id": "unit", "value": "dateTimeAsLocal"},
               {"id": "mappings", "value": [{"type": "special", "options": {"match": "null", "result": {"text": "sin corrida", "index": 0}}}]}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Equipo"},
+            "properties": [{"id": "links", "value": [{"title": "Abrir la ficha del equipo", "url": "/d/acr-equipo?var-equipo=${__value.raw}"}]}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "sortBy": [{"displayName": "Equipo", "desc": false}],
+        "footer": {"show": false, "reducer": ["count"], "countRows": false}
+      }
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Alertas de plagio",
+      "description": "Equipos con coincidencias en SCANOSS (código externo), Dolos (otros equipos con archivos similares) o la web (proyectos parecidos), y cuántas. Una coincidencia indica similitud, no copia confirmada: el detalle está en la página Plagio.",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 11},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/plagiarism.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "teams",
+          "columns": [
+            {"selector": "team", "text": "Equipo", "type": "string"},
+            {"selector": "external_matches", "text": "SCANOSS", "type": "number"},
+            {"selector": "similar_teams", "text": "Dolos", "type": "number"},
+            {"selector": "web_matches", "text": "Web", "type": "number"}
+          ],
+          "filterExpression": "team IN (${equipo:singlequote}) && (external_matches > 0 || similar_teams > 0 || web_matches > 0)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "Sin alertas de plagio",
+          "decimals": 0,
+          "custom": {"align": "auto", "filterable": true}
+        },
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "SCANOSS"},
+            "properties": [
+              {"id": "description", "value": "Coincidencias con código open source conocido (reports/<id>/scanoss.json)"},
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Dolos"},
+            "properties": [
+              {"id": "description", "value": "Otros equipos con archivos similares (reports/dolos/pairs.csv)"},
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Web"},
+            "properties": [
+              {"id": "description", "value": "Proyectos parecidos en la web (reports/<id>/web-plagiarism.json)"},
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {"id": "thresholds", "value": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 1}]}}
             ]
           },
           {

@@ -412,3 +412,80 @@ def test_team_cells_open_the_equipo_page(dashboard):
             for link in prop["value"]
         ]
         assert links == ["/d/acr-equipo?var-equipo=${__value.raw}"], title
+
+
+# --- Resumen: Alertas de plagio (PB-42, SPEC.md "Dashboard local" > "1. Resumen") ---------------
+
+RESUMEN = ROOT / "services" / "grafana" / "dashboards" / "resumen.json"
+ALERT_COLUMNS = {
+    "team": "Equipo",
+    "external_matches": "SCANOSS",
+    "similar_teams": "Dolos",
+    "web_matches": "Web",
+}
+
+
+@pytest.fixture(scope="module")
+def alerts() -> dict:
+    resumen = json.loads(RESUMEN.read_text(encoding="utf-8"))
+    (found,) = [p for p in resumen["panels"] if p.get("title") == "Alertas de plagio"]
+    return found
+
+
+def alert_rows(data: dict, selected: list[str]) -> list[dict]:
+    """The rows the panel's filter keeps: selected teams with at least one match."""
+    return [
+        row
+        for row in data["teams"]
+        if row["team"] in selected
+        and (row["external_matches"] > 0 or row["similar_teams"] > 0 or row["web_matches"] > 0)
+    ]
+
+
+def test_alerts_panel_reads_plagiarism_json_with_infinity(alerts, tmp_path):
+    assert alerts["type"] == "table"
+    assert alerts["datasource"] == {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"}
+    target = query(alerts)
+    assert target["datasource"]["uid"] == "acr-infinity"
+    assert target["url"] == PLAGIARISM_URL  # only the local file server, one URL for every team
+    assert target["parser"] == "backend"
+    assert target["root_selector"] == "teams"
+    assert {c["selector"]: c["text"] for c in target["columns"]} == ALERT_COLUMNS
+    # Every selector exists in the per-team rows that acr plagiarism writes.
+    all_reports(tmp_path)
+    data = build_plagiarism(TEAMS, tmp_path, now=NOW)
+    for column in target["columns"]:
+        assert column["selector"] in data["teams"][0], column["selector"]
+
+
+def test_alerts_panel_keeps_selected_teams_with_matches(alerts):
+    assert query(alerts)["filterExpression"] == (
+        "team IN (${equipo:singlequote}) && (external_matches > 0 || similar_teams > 0 || web_matches > 0)"
+    )
+
+
+def test_alerts_counts_come_from_scanoss_dolos_and_web(tmp_path):
+    all_reports(tmp_path)
+    data = build_plagiarism(TEAMS, tmp_path, now=NOW)
+    counts = {
+        row["team"]: (row["external_matches"], row["similar_teams"], row["web_matches"])
+        for row in alert_rows(data, TEAMS)
+    }
+    # equipo-01: 2 SCANOSS matches, similar to equipo-02 in Dolos and 2 web projects;
+    # equipo-02: only Dolos; equipo-03 has no match and is not an alert.
+    assert counts == {"equipo-01": (2, 1, 2), "equipo-02": (0, 1, 0)}
+    assert alert_rows(data, ["equipo-03"]) == []
+
+
+def test_alerts_cells_are_colored_and_link_to_the_team(alerts):
+    found = {
+        override["matcher"]["options"]: {prop["id"]: prop["value"] for prop in override["properties"]}
+        for override in alerts["fieldConfig"]["overrides"]
+    }
+    for column in ("SCANOSS", "Dolos", "Web"):
+        assert found[column]["custom.cellOptions"] == {"type": "color-background"}, column
+        steps = found[column]["thresholds"]["steps"]
+        assert [(s["color"], s["value"]) for s in steps] == [("green", None), ("orange", 1)], column
+    (link,) = found["Equipo"]["links"]
+    assert link["url"] == "/d/acr-equipo?var-equipo=${__value.raw}"
+    assert alerts["fieldConfig"]["defaults"]["noValue"] == "Sin alertas de plagio"
