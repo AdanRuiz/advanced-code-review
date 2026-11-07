@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from acr import analyze
+from acr import analyze, review, scc
 
 ROOT = Path(__file__).resolve().parent.parent
 GRAFANA = ROOT / "services" / "grafana"
@@ -273,3 +273,129 @@ def test_status_panel_shows_last_run_time_and_links_to_team(dashboards):
     assert found["Última corrida"]["unit"] == "dateTimeAsLocal"
     (link,) = found["Equipo"]["links"]
     assert link["url"] == "/d/acr-equipo?var-equipo=${__value.raw}"
+
+
+# --- Equipo: file panels (PB-46, SPEC.md "2. Equipo") -----------------------------------------
+
+SCC_URL = "http://files:8080/reports/${equipo}/scc.json"
+REVIEW_URL = "http://files:8080/reports/${equipo}/review.json"
+REVIEW_SCHEMA = ROOT / "acr" / "schemas" / "review.schema.json"
+
+
+def infinity_target(found: dict) -> dict:
+    assert found["datasource"] == {"type": INFINITY, "uid": "acr-infinity"}
+    (target,) = found["targets"]
+    assert target["datasource"] == {"type": INFINITY, "uid": "acr-infinity"}
+    assert target["type"] == "json" and target["source"] == "url"
+    assert target["parser"] == "backend" and target["format"] == "table"
+    return target
+
+
+def column_names(target: dict) -> dict:
+    return {column["selector"]: column["text"] for column in target["columns"]}
+
+
+def value_mapping(properties: dict) -> dict:
+    (mapping,) = properties["mappings"]
+    assert mapping["type"] == "value"
+    return mapping["options"]
+
+
+def review_enum(definition: str, field: str) -> set:
+    schema = json.loads(REVIEW_SCHEMA.read_text(encoding="utf-8"))
+    return set(schema["$defs"][definition]["properties"][field]["enum"])
+
+
+def test_equipo_panels_repeat_per_selected_team(dashboards):
+    # The file panels read one team's folder; a repeated row gives each selected team its own
+    # ${equipo}, so Todos and several teams also work.
+    panels = dashboards["equipo"]["panels"]
+    (row,) = [item for item in panels if item["type"] == "row"]
+    assert row["repeat"] == "equipo" and row["collapsed"] is False
+    assert "${equipo}" in row["title"]
+    below = [item for item in panels if item["gridPos"]["y"] > row["gridPos"]["y"]]
+    assert {item["title"] for item in below} == {
+        "Ficha",
+        "Lenguajes",
+        "Revisión asistida",
+        "Checklist de IA responsable",
+    }
+
+
+def test_equipo_cards_read_scc_totals(dashboards):
+    ficha = panel(dashboards["equipo"], "Ficha")
+    assert ficha["type"] == "stat"
+    target = infinity_target(ficha)
+    assert target["url"] == SCC_URL
+    assert target["root_selector"] == "totals"
+    assert column_names(target) == {"code": "Líneas de código", "files": "Archivos"}
+    assert all(column["type"] == "number" for column in target["columns"])
+
+
+def test_equipo_languages_are_horizontal_bars_from_scc(dashboards):
+    lenguajes = panel(dashboards["equipo"], "Lenguajes")
+    assert lenguajes["type"] == "barchart"
+    assert lenguajes["options"]["orientation"] == "horizontal"
+    assert lenguajes["options"]["xField"] == "Lenguaje"
+    target = infinity_target(lenguajes)
+    assert target["url"] == SCC_URL
+    assert target["root_selector"] == "languages"
+    assert column_names(target) == {"name": "Lenguaje", "code": "Líneas de código"}
+
+
+def test_scc_fields_used_by_the_dashboard_exist():
+    report = scc.build_report("demo", [{"Name": "Python", "Count": 2, "Code": 10}])
+    assert {"code", "files"} <= set(report["totals"])
+    assert {"name", "code"} <= set(report["languages"][0])
+
+
+def test_equipo_review_table_reads_findings(dashboards):
+    revision = panel(dashboards["equipo"], "Revisión asistida")
+    assert revision["type"] == "table"
+    target = infinity_target(revision)
+    assert target["url"] == REVIEW_URL
+    assert [column["text"] for column in target["columns"]] == [
+        "Criterio",
+        "Gravedad",
+        "Archivo:línea",
+        "Descripción",
+    ]
+    # JSONata joins file and line into archivo:línea; the outer [] keeps a single finding a list.
+    selector = target["root_selector"]
+    assert selector.startswith("[findings.{") and selector.endswith("}]")
+    assert '"location": file & ":" & $string(line)' in selector
+    for field in ("criterion", "severity", "description"):
+        assert f'"{field}": {field}' in selector
+    assert set(column_names(target)) == {"criterion", "severity", "location", "description"}
+
+
+def test_equipo_review_table_maps_every_criterion_and_severity(dashboards):
+    found = overrides(panel(dashboards["equipo"], "Revisión asistida"))
+    assert set(value_mapping(found["Criterio"])) == review_enum("finding", "criterion")
+    gravedad = found["Gravedad"]
+    assert gravedad["custom.cellOptions"] == {"type": "color-background"}
+    options = value_mapping(gravedad)
+    assert set(options) == review_enum("finding", "severity")
+    assert options["critical"]["color"] != options["info"]["color"]
+
+
+def test_equipo_ai_checklist_table_shows_the_eight_points(dashboards):
+    checklist = panel(dashboards["equipo"], "Checklist de IA responsable")
+    assert checklist["type"] == "table"
+    target = infinity_target(checklist)
+    assert target["url"] == REVIEW_URL
+    assert target["root_selector"] == "ai_checklist.items"
+    assert column_names(target) == {"id": "Punto", "status": "Resultado", "notes": "Notas"}
+    found = overrides(checklist)
+    points = value_mapping(found["Punto"])
+    assert len(points) == 8
+    assert {key: option["text"] for key, option in points.items()} == review.AI_CHECKLIST
+
+
+def test_equipo_ai_checklist_marks_pass_and_fail(dashboards):
+    resultado = overrides(panel(dashboards["equipo"], "Checklist de IA responsable"))["Resultado"]
+    assert resultado["custom.cellOptions"] == {"type": "color-background"}
+    options = value_mapping(resultado)
+    assert set(options) == review_enum("check", "status")
+    assert options["pass"] == {"text": "✓", "color": "green", "index": 0}
+    assert options["fail"] == {"text": "✗", "color": "red", "index": 1}

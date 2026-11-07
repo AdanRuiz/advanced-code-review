@@ -67,10 +67,271 @@
       "id": 1,
       "type": "text",
       "title": "2. Equipo",
-      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 0},
+      "gridPos": {"h": 3, "w": 24, "x": 0, "y": 0},
       "options": {
         "mode": "markdown",
-        "content": "**Ficha de un equipo.** Los paneles de esta página llegan con PB-19 (SPEC.md, sección \"2. Equipo\")."
+        "content": "**Ficha de un equipo.** Una fila por cada equipo elegido en `equipo`. Líneas y archivos salen de `reports/<id>/scc.json` (`acr scc` o `acr analyze`); la revisión asistida y la checklist de IA, de `reports/<id>/review.json` (borrador de Claude Code que valida el revisor). La nota, el quality gate y los paneles de MegaLinter llegan con PB-47 (SPEC.md, sección \"2. Equipo\")."
+      }
+    },
+    {
+      "id": 2,
+      "type": "row",
+      "title": "Equipo ${equipo}",
+      "repeat": "equipo",
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 3},
+      "panels": []
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Ficha",
+      "description": "Líneas de código (sin comentarios ni líneas en blanco) y número de archivos del repositorio, según scc (reports/<id>/scc.json).",
+      "gridPos": {"h": 8, "w": 6, "x": 0, "y": 4},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/${equipo}/scc.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "totals",
+          "columns": [
+            {"selector": "code", "text": "Líneas de código", "type": "number"},
+            {"selector": "files", "text": "Archivos", "type": "number"}
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Sin datos de scc",
+          "color": {"mode": "fixed", "fixedColor": "blue"}
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value_and_name",
+        "justifyMode": "center",
+        "orientation": "vertical"
+      }
+    },
+    {
+      "id": 4,
+      "type": "barchart",
+      "title": "Lenguajes",
+      "description": "Líneas de código por lenguaje, de mayor a menor, según scc (reports/<id>/scc.json).",
+      "gridPos": {"h": 8, "w": 18, "x": 6, "y": 4},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/${equipo}/scc.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "languages",
+          "columns": [
+            {"selector": "name", "text": "Lenguaje", "type": "string"},
+            {"selector": "code", "text": "Líneas de código", "type": "number"}
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "Sin datos de scc",
+          "color": {"mode": "fixed", "fixedColor": "blue"}
+        },
+        "overrides": []
+      },
+      "options": {
+        "orientation": "horizontal",
+        "xField": "Lenguaje",
+        "showValue": "auto",
+        "stacking": "none",
+        "groupWidth": 0.7,
+        "barWidth": 0.8,
+        "legend": {"showLegend": false, "displayMode": "list", "placement": "bottom"},
+        "tooltip": {"mode": "single", "sort": "none"}
+      }
+    },
+    {
+      "id": 5,
+      "type": "table",
+      "title": "Revisión asistida",
+      "description": "Hallazgos de Claude Code (reports/<id>/review.json): criterio, gravedad, archivo:línea y descripción. Es un borrador que valida el revisor.",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 12},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/${equipo}/review.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "[findings.{\"criterion\": criterion, \"severity\": severity, \"location\": file & \":\" & $string(line), \"description\": description}]",
+          "columns": [
+            {"selector": "criterion", "text": "Criterio", "type": "string"},
+            {"selector": "severity", "text": "Gravedad", "type": "string"},
+            {"selector": "location", "text": "Archivo:línea", "type": "string"},
+            {"selector": "description", "text": "Descripción", "type": "string"}
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin hallazgos", "custom": {"align": "auto", "filterable": true}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Criterio"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "feasibility": {"text": "factibilidad", "index": 0},
+                      "quality": {"text": "calidad", "index": 1},
+                      "security": {"text": "seguridad", "index": 2},
+                      "responsible_ai": {"text": "IA responsable", "index": 3},
+                      "plagiarism": {"text": "plagio", "index": 4}
+                    }
+                  }
+                ]
+              },
+              {"id": "custom.width", "value": 140}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Gravedad"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "critical": {"text": "crítica", "color": "dark-red", "index": 0},
+                      "high": {"text": "alta", "color": "red", "index": 1},
+                      "medium": {"text": "media", "color": "orange", "index": 2},
+                      "low": {"text": "baja", "color": "yellow", "index": 3},
+                      "info": {"text": "info", "color": "blue", "index": 4}
+                    }
+                  }
+                ]
+              },
+              {"id": "custom.width", "value": 110}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Archivo:línea"},
+            "properties": [{"id": "custom.width", "value": 320}]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {"show": false, "reducer": ["count"], "countRows": false}
+      }
+    },
+    {
+      "id": 6,
+      "type": "table",
+      "title": "Checklist de IA responsable",
+      "description": "Los 8 puntos de la checklist de integración responsable de IA (SPEC.md, \"Revisión asistida con Claude Code\"), marcados por Claude Code en reports/<id>/review.json: ✓ cumple, ✗ no cumple.",
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 22},
+      "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {"type": "yesoreyeram-infinity-datasource", "uid": "acr-infinity"},
+          "type": "json",
+          "source": "url",
+          "parser": "backend",
+          "format": "table",
+          "url": "http://files:8080/reports/${equipo}/review.json",
+          "url_options": {"method": "GET", "data": ""},
+          "root_selector": "ai_checklist.items",
+          "columns": [
+            {"selector": "id", "text": "Punto", "type": "string"},
+            {"selector": "status", "text": "Resultado", "type": "string"},
+            {"selector": "notes", "text": "Notas", "type": "string"}
+          ]
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {"noValue": "Sin revisión asistida", "custom": {"align": "auto", "filterable": false}},
+        "overrides": [
+          {
+            "matcher": {"id": "byName", "options": "Punto"},
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "data_sent_to_provider": {"text": "¿Qué datos del usuario (menores) se envían al proveedor de IA?", "index": 0},
+                      "data_retention": {"text": "¿Se guardan conversaciones o datos personales? ¿Dónde y cuánto tiempo?", "index": 1},
+                      "api_keys_outside_code": {"text": "¿Las API keys están fuera del código (variables de entorno)?", "index": 2},
+                      "input_output_filtering": {"text": "¿Hay filtros o moderación de entrada y salida?", "index": 3},
+                      "failure_handling": {"text": "¿Qué pasa si la IA falla, tarda o responde algo inapropiado?", "index": 4},
+                      "ai_disclosure": {"text": "¿El usuario sabe que interactúa con una IA?", "index": 5},
+                      "adult_supervision": {"text": "¿Hay supervisión de un adulto (padre, docente)?", "index": 6},
+                      "system_prompts_reviewable": {"text": "¿Los prompts del sistema están en el código y son revisables?", "index": 7}
+                    }
+                  }
+                ]
+              },
+              {"id": "custom.width", "value": 520}
+            ]
+          },
+          {
+            "matcher": {"id": "byName", "options": "Resultado"},
+            "properties": [
+              {"id": "custom.cellOptions", "value": {"type": "color-background"}},
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pass": {"text": "✓", "color": "green", "index": 0},
+                      "fail": {"text": "✗", "color": "red", "index": 1},
+                      "not_applicable": {"text": "no aplica", "color": "text", "index": 2},
+                      "unknown": {"text": "sin evidencia", "color": "yellow", "index": 3}
+                    }
+                  }
+                ]
+              },
+              {"id": "custom.width", "value": 130},
+              {"id": "custom.align", "value": "center"}
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {"show": false, "reducer": ["count"], "countRows": false}
       }
     }
   ]

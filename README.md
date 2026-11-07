@@ -248,6 +248,14 @@ Grafana se configura sola al arrancar (PB-17), desde [`services/grafana/`](servi
 
 El panel **Alertas de plagio** (PB-42) lee `reports/plagiarism.json` (el mismo archivo de la página Plagio) con Infinity, filtrado por la variable `equipo`, y muestra solo los equipos con alguna coincidencia y cuántas: **SCANOSS** (coincidencias con código externo de `scanoss.json`), **Dolos** (otros equipos con archivos similares según `dolos/pairs.csv`) y **Web** (proyectos parecidos de `web-plagiarism.json`), en verde (0) o naranja (1 o más). Sin coincidencias dice «Sin alertas de plagio». Clic en el equipo abre la página Equipo filtrada; el detalle está en la página Plagio. Los demás paneles del Resumen llegan con PB-18 y PB-43.
 
+**2. Equipo** (PB-46) tiene una fila por cada equipo elegido en la variable `equipo` (fila repetida de Grafana, así funciona también con Todos o varios equipos), con los paneles que salen de archivos de `reports/<id>/` leídos con Infinity:
+
+- **Ficha:** tarjetas de líneas de código y número de archivos (`totals` de `scc.json`).
+- **Lenguajes:** barras horizontales con las líneas de código por lenguaje (`languages` de `scc.json`).
+- **Revisión asistida:** hallazgos de Claude Code de `review.json` con criterio, gravedad (coloreada de crítica a info), `archivo:línea` y descripción. «Sin hallazgos» si no hay.
+- **Checklist de IA responsable:** los 8 puntos de `ai_checklist` de `review.json` con ✓ (verde), ✗ (rojo), no aplica o sin evidencia, y las notas.
+- La nota A–E, el quality gate y los paneles de MegaLinter llegan con PB-47.
+
 **4. Seguridad** (PB-21) lee `reports/security.json` con Infinity, filtrado por la variable `equipo`:
 
 - 4 tarjetas verde (0) / rojo (1 o más): **CVE críticas/altas con corrección** (indicador principal, arriba a la izquierda), hallazgos de Semgrep, secretos de Betterleaks y total de CVE.
@@ -267,7 +275,7 @@ El panel **Alertas de plagio** (PB-42) lee `reports/plagiarism.json` (el mismo a
 - **Historial de git:** commits, primer commit, commits antes del inicio y después del cierre, commit único y fork.
 - Clic en un equipo en las tablas, las barras o la matriz abre la página Equipo filtrada; los enlaces de SCANOSS y de la web abren en otra pestaña.
 
-Las demás páginas aún no tienen paneles (llegan con PB-18 a PB-20), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
+Calidad y Calificación aún no tienen paneles (llegan con PB-18 a PB-20), y el envío de MegaLinter a Loki/Prometheus llega con PB-16; hasta entonces la variable `herramienta` queda vacía. Los paneles de Seguridad salen de archivos, no de Prometheus, y todavía no se filtran por `herramienta`.
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
