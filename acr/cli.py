@@ -13,8 +13,9 @@ from pathlib import Path
 from acr import __version__
 from acr.analyze import STATUS_FILE, default_dolos, default_steps, run_analysis
 from acr.analyze import Options as AnalyzeOptions
-from acr.config import load_config
+from acr.config import Config, Team, load_config
 from acr.dolos import DolosError, write_dolos
+from acr.export import ExportError, write_pdf, write_zip
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
 from acr.megalinter import (
@@ -328,7 +329,10 @@ def _analyze(args: argparse.Namespace) -> int:
     security_ok = _write_security([team.id for team in config.equipos], "acr analyze")
     # PB-22: the same for the Plagio page.
     plagiarism_ok = _write_plagiarism([team.id for team in config.equipos], "acr analyze")
-    return EXIT_OK if result.ok and security_ok and plagiarism_ok else EXIT_ERROR
+    # PB-23: the exports are regenerated in the same run, for every team: Dolos also changes the
+    # reports of the teams that were not re-analyzed.
+    exports_ok = _write_exports(config, config.equipos, DEFAULT_DASHBOARD_URL, "acr analyze")
+    return EXIT_OK if result.ok and security_ok and plagiarism_ok and exports_ok else EXIT_ERROR
 
 
 def _write_security(team_ids: list[str], command: str) -> bool:
@@ -523,6 +527,51 @@ def _report(args: argparse.Namespace) -> int:
         print(f"acr report: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
         return EXIT_ERROR
     return EXIT_OK
+
+
+def _write_exports(config: Config, teams: Sequence[Team], dashboard_url: str, command: str) -> bool:
+    """PB-23: reporte.md and reporte.pdf for ``teams``, then reports/todos.zip with every team."""
+    names = {team.id: team.nombre for team in config.equipos}
+    failed = 0
+    for team in teams:
+        try:
+            write_report(team, config.evento, DEFAULT_REPORTS_DIR, names=names, dashboard_url=dashboard_url)
+            path = write_pdf(team.id, DEFAULT_REPORTS_DIR)
+        except (ReportError, ExportError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error al exportar: {exc}", file=sys.stderr)
+            continue
+        print(f"{team.id}: PDF -> {path.as_posix()}")
+    try:
+        result = write_zip([team.id for team in config.equipos], DEFAULT_REPORTS_DIR)
+    except (ExportError, OSError) as exc:
+        print(f"{command}: error al escribir el ZIP: {exc}", file=sys.stderr)
+        return False
+    print(f"Exportación: {len(result.files)} archivo(s) -> {result.path.as_posix()}")
+    if result.missing:
+        print(f"aviso: faltan en el ZIP: {', '.join(result.missing)}", file=sys.stderr)
+    if failed:
+        print(f"{command}: {failed} de {len(teams)} equipo(s) sin exportar", file=sys.stderr)
+    return not failed
+
+
+def _export(args: argparse.Namespace) -> int:
+    """PB-23: write reporte.md and reporte.pdf per team, and reports/todos.zip."""
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr export: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+    ok = _write_exports(config, teams, args.dashboard_url, "acr export")
+    return EXIT_OK if ok else EXIT_ERROR
 
 
 def _positive_int(value: str) -> int:
@@ -723,6 +772,25 @@ def build_parser() -> argparse.ArgumentParser:
         help="enlace al dashboard local de Grafana en el reporte (por defecto: %(default)s)",
     )
     report.set_defaults(handler=_report)
+
+    export = subparsers.add_parser(
+        "export",
+        help="genera reporte.md y reporte.pdf por equipo y reports/todos.zip",
+        description="Regenera el reporte Markdown de cada equipo, lo convierte a PDF con md-to-pdf "
+        "(reports/<id>/reporte.pdf) y arma reports/todos.zip con los reportes de todos los equipos "
+        "y los CSV de Dolos: las descargas de los botones del dashboard. No vuelve a analizar.",
+    )
+    export.add_argument(
+        "team_id", nargs="?", metavar="ID",
+        help="solo el reporte de este equipo; el ZIP siempre incluye a todos (por defecto: todos)",
+    )
+    export.add_argument(
+        "--dashboard-url",
+        default=DEFAULT_DASHBOARD_URL,
+        metavar="URL",
+        help="enlace al dashboard local de Grafana en el reporte (por defecto: %(default)s)",
+    )
+    export.set_defaults(handler=_export)
 
     return parser
 

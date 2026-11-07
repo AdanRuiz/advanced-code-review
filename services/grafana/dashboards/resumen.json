@@ -22,7 +22,10 @@
       "icon": "external link",
       "tooltip": "",
       "url": ""
-    }
+    },
+    {"title": "PDF equipo", "type": "link", "url": "http://localhost:8080/reports/${equipo}/reporte.pdf", "tooltip": "Descargar el reporte del equipo seleccionado en PDF (con Todos o varios equipos: el ZIP)", "icon": "doc", "targetBlank": true, "includeVars": false, "keepTime": false, "asDropdown": false, "tags": []},
+    {"title": "MD equipo", "type": "link", "url": "http://localhost:8080/reports/${equipo}/reporte.md", "tooltip": "Descargar el reporte del equipo seleccionado en Markdown (con Todos o varios equipos: el ZIP)", "icon": "doc", "targetBlank": true, "includeVars": false, "keepTime": false, "asDropdown": false, "tags": []},
+    {"title": "ZIP todos", "type": "link", "url": "http://localhost:8080/reports/todos.zip", "tooltip": "Descargar los reportes de todos los equipos y los CSV de Dolos", "icon": "doc", "targetBlank": true, "includeVars": false, "keepTime": false, "asDropdown": false, "tags": []}
   ],
   "templating": {
     "list": [
