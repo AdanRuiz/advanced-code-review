@@ -72,6 +72,9 @@ def write_pdf(
                 result = (runner or subprocess.run)(
                     [_md_to_pdf_command(), "--basedir", str(work), str(markdown)],
                     cwd=work,
+                    # md-to-pdf's CLI first waits for stdin to end (get-stdin); an inherited open
+                    # stdin (background shells, services) made it wait forever.
+                    stdin=subprocess.DEVNULL,
                     stdout=output,
                     stderr=output,
                     timeout=MD_TO_PDF_TIMEOUT_SECONDS,

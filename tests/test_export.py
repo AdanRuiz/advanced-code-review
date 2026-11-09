@@ -246,6 +246,8 @@ def test_md_to_pdf_output_goes_to_a_file_not_a_pipe(tmp_path):
     assert "capture_output" not in kwargs
     assert kwargs["stdout"] is not subprocess.PIPE and hasattr(kwargs["stdout"], "fileno")
     assert kwargs["stderr"] is kwargs["stdout"]
+    # md-to-pdf reads stdin before its file arguments; an open inherited stdin blocks it.
+    assert kwargs["stdin"] is subprocess.DEVNULL
 
 
 def test_md_to_pdf_error_detail_is_read_from_the_output_file(tmp_path):
