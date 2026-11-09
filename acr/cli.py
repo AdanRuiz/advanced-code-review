@@ -594,6 +594,22 @@ def _export(args: argparse.Namespace) -> int:
     return EXIT_OK if ok else EXIT_ERROR
 
 
+def _serve(args: argparse.Namespace) -> int:
+    """PB-24: run the orchestrator API over equipos.yml, listening on 127.0.0.1 only."""
+    from acr.orchestrator import DEFAULT_HOST, serve
+
+    print(f"Orquestador en http://{DEFAULT_HOST}:{args.port} (solo localhost) sobre {args.config}")
+    serve(args.config, port=args.port)
+    return EXIT_OK
+
+
+def _port(value: str) -> int:
+    number = int(value)
+    if not 1 <= number <= 65535:
+        raise argparse.ArgumentTypeError("debe ser un puerto entre 1 y 65535")
+    return number
+
+
 def _positive_int(value: str) -> int:
     number = int(value)
     if number <= 0:
@@ -832,6 +848,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="enlace al dashboard local de Grafana en el reporte (por defecto: %(default)s)",
     )
     export.set_defaults(handler=_export)
+
+    serve = subparsers.add_parser(
+        "serve",
+        help="inicia la API del orquestador (evento y equipos sobre equipos.yml) en localhost",
+        description="Sirve la API del orquestador para leer y editar el evento y los equipos de "
+        "equipos.yml. Escucha solo en 127.0.0.1 y rechaza peticiones que no vengan de localhost. "
+        "No obtiene ni ejecuta el código de los equipos.",
+    )
+    serve.add_argument(
+        "--port",
+        type=_port,
+        default=8000,
+        help="puerto en 127.0.0.1 (por defecto: %(default)s)",
+    )
+    serve.set_defaults(handler=_serve)
 
     return parser
 
