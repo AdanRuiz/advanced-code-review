@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from acr.config import Config, Team, is_valid_team_id
+from acr.dolos import DEFAULT_IMAGE as DEFAULT_DOLOS_IMAGE
 from acr.dolos import DolosError, write_dolos
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
 from acr.git_signals import DEFAULT_REPORTS_DIR, GitSignalsError, write_git_signals
@@ -226,6 +227,7 @@ class Options:
     engine: str | None = None
     image: str = DEFAULT_IMAGE
     megalinter_timeout: int = DEFAULT_TIMEOUT_SECONDS
+    dolos_image: str = DEFAULT_DOLOS_IMAGE
 
 
 def default_steps(config: Config, options: Options) -> list[tuple[str, Step]]:
@@ -277,7 +279,13 @@ def default_steps(config: Config, options: Options) -> list[tuple[str, Step]]:
 
 def default_dolos(options: Options) -> DolosStep:
     def dolos(team_ids: list[str]) -> str:
-        result = write_dolos(team_ids, options.repos_dir, options.reports_dir)
+        result = write_dolos(
+            team_ids,
+            options.repos_dir,
+            options.reports_dir,
+            engine=options.engine,
+            image=options.dolos_image,
+        )
         totals = result.summary["totals"]
         return (
             f"{len(team_ids)} equipo(s), {totals['team_pairs_with_matches']} de {totals['team_pairs']} "

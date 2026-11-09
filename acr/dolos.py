@@ -11,6 +11,13 @@ Dolos only reads the files: the code is never executed. It runs with ``--output-
 it does not start its local web server and nothing leaves the machine. The files to compare go in
 an info CSV (``filename``, ``label`` = team id), which avoids command-line length limits.
 
+Dolos runs in the official container ``ghcr.io/dodona-edu/dolos-cli`` with a fixed version (PB-60,
+SPEC.md "Entorno, seguridad y privacidad"), with ``podman`` or ``docker``: ``repos/`` is mounted
+read-only at ``/repos``, a temporary folder under ``reports/dolos/`` at ``/work`` (info CSV and
+Dolos' raw output), there is no network (``--network=none``) and the container has the MegaLinter
+hardening (PB-40). Paths in the info CSV are container paths (``/repos/<id>/...``), and the paths
+in Dolos' output are translated back to the team and its repo-relative path.
+
 Results, in ``reports/dolos/`` (SPEC.md "Formato de resultados"):
 
 - ``pairs.csv``: one row per pair of teams, with the highest similarity between any two of their
@@ -25,6 +32,7 @@ import csv
 import io
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import tempfile
@@ -36,6 +44,7 @@ from pathlib import Path
 from typing import Any
 
 from acr.config import is_valid_team_id
+from acr.megalinter import HARDENING_OPTIONS, MegaLinterError, find_engine
 from acr.scanoss import dependency_dir
 
 DEFAULT_REPORTS_DIR = Path("reports")
@@ -46,7 +55,14 @@ SUMMARY_FILE = "dolos.json"
 TIMEOUT_SECONDS = 30 * 60
 SCHEMA_VERSION = 1
 
+# Official Dolos CLI image, with a fixed version (``acr dolos --image`` changes it).
+DEFAULT_IMAGE = "ghcr.io/dodona-edu/dolos-cli:2.9.0"
+# Paths inside the container.
+REPOS_TARGET = "/repos"
+WORK_TARGET = "/work"
+
 Runner = Callable[..., subprocess.CompletedProcess]
+Which = Callable[[str], str | None]
 
 # File extension -> Dolos language name (``dolos run --language``).
 LANGUAGES: dict[str, str] = {
@@ -148,23 +164,18 @@ def collect_files(repos: dict[str, Path]) -> SourceFiles:
     return result
 
 
-def _dolos_command() -> str:
-    # npm installs ``dolos.cmd`` on Windows, which CreateProcess does not find without its suffix.
-    return shutil.which("dolos") or "dolos"
+def container_path(team_id: str, relative: str) -> str:
+    """Path of ``repos/<id>/<relative>`` inside the container."""
+    return posixpath.join(REPOS_TARGET, team_id, relative)
 
 
-def _write_info_csv(target: Path, work: Path, repos: dict[str, Path], files: dict[str, list[str]]) -> None:
+def _write_info_csv(target: Path, files: dict[str, list[str]]) -> None:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(["filename", "label"])
     for team_id in sorted(files):
-        root = repos[team_id].resolve()
         for relative in files[team_id]:
-            try:
-                filename = os.path.relpath(root / relative, work)
-            except ValueError as exc:  # Windows: different drives
-                raise DolosError("repos/ y reports/ deben estar en la misma unidad") from exc
-            writer.writerow([Path(filename).as_posix(), team_id])
+            writer.writerow([container_path(team_id, relative), team_id])
     target.write_text(buffer.getvalue(), encoding="utf-8")
 
 
@@ -175,30 +186,26 @@ def _number(value: str | None, cast: Callable[[str], Any], default: Any) -> Any:
         return default
 
 
-def _owner(path_text: str, work: Path, roots: dict[str, Path]) -> tuple[str, str] | None:
-    path = Path(path_text)
-    if not path.is_absolute():
-        path = work / path
-    path = Path(os.path.normpath(path))
-    for team_id, root in roots.items():
-        try:
-            return team_id, path.relative_to(root).as_posix()
-        except ValueError:
-            continue
-    return None
+def _owner(path_text: str, team_ids: set[str]) -> tuple[str, str] | None:
+    """Team and repo-relative path of a container path (absolute, or relative to ``/work``)."""
+    path = posixpath.normpath(posixpath.join(WORK_TARGET, path_text))
+    parts = path.split("/")  # "", "repos", "<id>", ...
+    if len(parts) < 4 or parts[0] != "" or "/" + parts[1] != REPOS_TARGET or parts[2] not in team_ids:
+        return None
+    return parts[2], "/".join(parts[3:])
 
 
-def parse_pairs(text: str, language: str, work: Path, repos: dict[str, Path]) -> list[FilePair]:
-    """Read Dolos' ``pairs.csv`` and keep the pairs of files that belong to different teams."""
+def parse_pairs(text: str, language: str, team_ids: Iterable[str]) -> list[FilePair]:
+    """Read Dolos' ``pairs.csv`` (container paths) and keep the pairs of different teams."""
     reader = csv.DictReader(io.StringIO(text))
     required = {"leftFilePath", "rightFilePath", "similarity"}
     if reader.fieldnames is None or not required <= set(reader.fieldnames):
         raise DolosError(f"salida inesperada de Dolos ({language}): faltan columnas de pairs.csv")
-    roots = {team_id: Path(os.path.normpath(root.resolve())) for team_id, root in repos.items()}
+    teams = set(team_ids)
     pairs: list[FilePair] = []
     for row in reader:
-        left = _owner(row["leftFilePath"], work, roots)
-        right = _owner(row["rightFilePath"], work, roots)
+        left = _owner(row["leftFilePath"], teams)
+        right = _owner(row["rightFilePath"], teams)
         if left is None or right is None:
             raise DolosError(f"salida inesperada de Dolos ({language}): archivo fuera de repos/")
         if left[0] == right[0]:
@@ -223,29 +230,77 @@ def parse_pairs(text: str, language: str, work: Path, repos: dict[str, Path]) ->
     return pairs
 
 
-def run_dolos(
-    language: str,
-    files: dict[str, list[str]],
-    repos: dict[str, Path],
-    work: Path,
-    runner: Runner,
-    timeout: int = TIMEOUT_SECONDS,
-) -> list[FilePair]:
-    """Run Dolos over the files of one language of every team and return cross-team pairs."""
-    info = work / f"{language}.csv"
-    output = work / f"out-{language}"
-    _write_info_csv(info, work, repos, files)
-    cmd = [
-        _dolos_command(),
+def container_name(language: str) -> str:
+    return f"acr-dolos-{language}"
+
+
+def _bind(source: Path, target: str, read_only: bool) -> str:
+    source_text = str(source.resolve())
+    if "," in source_text or "=" in source_text:
+        raise DolosError(f"la ruta {source_text!r} no puede contener ',' ni '='")
+    spec = f"type=bind,source={source_text},target={target}"
+    return spec + ",readonly=true" if read_only else spec
+
+
+def container_user(engine: str) -> str | None:
+    """``uid:gid`` for Docker on Linux or macOS, so Dolos can write to the work folder.
+
+    Rootless Podman already maps the container root to the current user, and Docker Desktop on
+    Windows has no ``os.getuid``.
+    """
+    if engine != "docker" or not hasattr(os, "getuid"):
+        return None
+    return f"{os.getuid()}:{os.getgid()}"
+
+
+def build_command(
+    engine: str, image: str, language: str, repos_dir: Path, work: Path, user: str | None = None
+) -> list[str]:
+    """Hardened one-shot container: ``repos/`` read-only, the work folder writable, no network.
+
+    Nothing else from the host is mounted.
+    """
+    return [
+        engine,
+        "run",
+        "--rm",
+        "--init",
+        "--name",
+        container_name(language),
+        "--network=none",
+        *HARDENING_OPTIONS,
+        *(["--user", user] if user else []),
+        "--mount",
+        _bind(repos_dir, REPOS_TARGET, read_only=True),
+        "--mount",
+        _bind(work, WORK_TARGET, read_only=False),
+        "--workdir",
+        WORK_TARGET,
+        image,
         "run",
         "--language",
         language,
         "--output-format",
         "csv",
         "--output-destination",
-        str(output),
-        str(info),
+        f"{WORK_TARGET}/out-{language}",
+        f"{WORK_TARGET}/{language}.csv",
     ]
+
+
+def run_dolos(
+    language: str,
+    files: dict[str, list[str]],
+    repos_dir: Path,
+    work: Path,
+    runner: Runner,
+    engine: str,
+    image: str = DEFAULT_IMAGE,
+    timeout: int = TIMEOUT_SECONDS,
+) -> list[FilePair]:
+    """Run Dolos over the files of one language of every team and return cross-team pairs."""
+    _write_info_csv(work / f"{language}.csv", files)
+    cmd = build_command(engine, image, language, repos_dir, work, container_user(engine))
     try:
         result = runner(
             cmd,
@@ -253,23 +308,30 @@ def run_dolos(
             text=True,
             encoding="utf-8",
             errors="replace",
-            cwd=work,
             timeout=timeout,
             check=False,
         )
     except FileNotFoundError as exc:
-        raise DolosError("Dolos no está instalado o no está en el PATH (ver PB-1)") from exc
+        raise DolosError(f"{engine} no está instalado o no está en el PATH (ver PB-1)") from exc
     except subprocess.TimeoutExpired as exc:
+        # The engine client was killed; stop the container too so it does not keep running.
+        try:
+            runner(
+                [engine, "rm", "--force", container_name(language)],
+                capture_output=True, text=True, timeout=120, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            pass
         raise DolosError(f"Dolos ({language}) tardó más de {timeout // 60} minutos") from exc
     if result.returncode != 0:
-        detail = (result.stderr or "").strip().splitlines()
+        detail = [line.strip() for line in (result.stderr or "").splitlines() if line.strip()]
         reason = detail[-1] if detail else f"código {result.returncode}"
         raise DolosError(f"Dolos ({language}) falló: {reason}")
     try:
-        text = (output / PAIRS_FILE).read_text(encoding="utf-8")
+        text = (work / f"out-{language}" / PAIRS_FILE).read_text(encoding="utf-8")
     except FileNotFoundError as exc:
         raise DolosError(f"Dolos ({language}) no generó pairs.csv") from exc
-    return parse_pairs(text, language, work, repos)
+    return parse_pairs(text, language, files)
 
 
 def team_pairs(team_ids: Iterable[str], pairs: Iterable[FilePair]) -> list[dict[str, Any]]:
@@ -326,10 +388,15 @@ def write_dolos(
     repos_dir: Path = Path("repos"),
     reports_dir: Path = DEFAULT_REPORTS_DIR,
     runner: Runner | None = None,
+    *,
+    engine: str | None = None,
+    image: str = DEFAULT_IMAGE,
+    which: Which | None = None,
 ) -> DolosResult:
     """Run Dolos once over ``repos_dir/<id>`` of every team and write ``reports_dir/dolos/``.
 
     Every team must already be fetched; the caller decides what to do with missing ones.
+    ``engine`` is ``podman`` or ``docker`` (default: podman if installed, else docker).
     """
     team_ids = sorted(set(team_ids))
     for team_id in team_ids:
@@ -344,6 +411,12 @@ def write_dolos(
     repos = {team_id: repos_dir / team_id for team_id in team_ids}
     sources = collect_files(repos)
     compared = {lang: files for lang, files in sources.by_language.items() if len(files) >= 2}
+    chosen = ""
+    if compared:
+        try:
+            chosen = find_engine(engine, which or shutil.which)
+        except MegaLinterError as exc:
+            raise DolosError(f"Dolos corre en un contenedor: {exc}") from exc
 
     out_dir = reports_dir / DOLOS_DIR
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -351,7 +424,9 @@ def write_dolos(
     with tempfile.TemporaryDirectory(prefix=".acr-dolos-", dir=out_dir) as tmp:
         work = Path(tmp).resolve()
         for language in sorted(compared):
-            file_pairs.extend(run_dolos(language, compared[language], repos, work, runner))
+            file_pairs.extend(
+                run_dolos(language, compared[language], repos_dir, work, runner, chosen, image)
+            )
     file_pairs.sort(key=lambda p: (-p.similarity, p.team_a, p.team_b, p.file_a, p.file_b))
 
     rows = team_pairs(team_ids, file_pairs)

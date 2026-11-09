@@ -133,6 +133,8 @@ Una coincidencia indica similitud, no copia confirmada. Requiere `scanoss-py` en
 
 - Agrupa los archivos de `repos/<id>` por lenguaje según su extensión y corre Dolos una vez por cada lenguaje que usen al menos dos equipos. Deja fuera `.git` y las mismas carpetas de dependencias que SCANOSS. Los archivos de lenguajes que Dolos no soporta no se comparan y se cuentan por extensión.
 - Dolos solo lee los archivos, que recibe en un CSV de entrada (`filename`, `label` = id del equipo). Corre con `--output-format csv`: no levanta su servidor web y nada sale de la máquina.
+- Corre en un contenedor de un solo uso (PB-60) con la imagen oficial `ghcr.io/dodona-edu/dolos-cli:2.9.0` (versión fija, cambiable con `--image`), con `podman` o, si no está, `docker` (`--engine` para elegir). Así no hace falta instalar Dolos con npm, que en Windows exige compilar `@dodona/dolos-parsers` con Visual Studio Build Tools.
+- El contenedor no tiene red (`--network=none`) y tiene el mismo endurecimiento que MegaLinter (PB-40: `--cap-drop=ALL`, `--security-opt=no-new-privileges`, `--pids-limit=4096`, `--memory=8g`). Del anfitrión solo se montan `repos/` en **solo lectura** (en `/repos`) y una carpeta temporal dentro de `reports/dolos/` (en `/work`) con el CSV de entrada y la salida cruda de Dolos, que se borra al terminar. Las rutas del CSV de entrada son las del contenedor (`/repos/<id>/...`) y las de la salida de Dolos se traducen de vuelta al equipo y su ruta relativa. Con Docker en Linux o macOS corre con el usuario actual (`--user uid:gid`) para poder escribir en esa carpeta.
 - Los pares de archivos del mismo equipo se ignoran.
 
 Escribe en `reports/dolos/`:
@@ -141,7 +143,7 @@ Escribe en `reports/dolos/`:
 - `file-pairs.csv`: cada par de archivos de equipos distintos que reporta Dolos, con su lenguaje y similitud.
 - `dolos.json`: equipos y lenguajes comparados, archivos por equipo y archivos excluidos.
 
-Una similitud alta indica parecido, no copia confirmada. Requiere Dolos en el `PATH` (PB-1) y al menos dos equipos obtenidos; los equipos sin obtener se avisan y no se comparan (código de salida 1). Si Dolos falla, se conservan los reportes anteriores.
+Una similitud alta indica parecido, no copia confirmada. Requiere `podman` o `docker` en el `PATH` y la imagen de Dolos (la primera corrida la descarga, ~400 MB; sin red se puede bajar antes con `docker pull`), y al menos dos equipos obtenidos; sin motor de contenedores falla con un error claro. Los equipos sin obtener se avisan y no se comparan (código de salida 1). Si Dolos falla o pasa de 30 minutos por lenguaje (el contenedor se detiene), se conservan los reportes anteriores. En `acr analyze`, `--engine` aplica también a Dolos y `--dolos-image` cambia su imagen.
 
 `acr analyze` corre el análisis completo, en el orden de la spec, para todos los equipos o solo para `ID`:
 
