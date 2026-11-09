@@ -696,8 +696,11 @@ def _cited(path: str, external: list[dict[str, Any]]) -> str:
         target = str(item.get("path", "")).rstrip("/")
         if path == target or path.startswith(target + "/"):
             origin = item.get("origin")
-            if origin in ("third_party_cited", "official_template", "ai_declared"):
+            if origin in ("third_party_cited", "official_template"):
                 return "Yes"
+            if origin == "ai_declared":
+                # Declared AI use is not a citation of the matched project: say so for the judges.
+                return "AI-declared"
             if origin in ("third_party_uncited", "ai_undeclared"):
                 return "No"
             return "Generator"

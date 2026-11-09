@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from acr import report
 from acr.cli import EXIT_ERROR, EXIT_OK, main
 from acr.config import Event, Team
 from acr.report import (
@@ -484,3 +485,10 @@ def test_cli_report_unknown_team_and_bad_config(tmp_path, monkeypatch):
     config = write_config(tmp_path, ["equipo-01"])
     assert main(["--config", str(config), "report", "otro"]) == EXIT_ERROR
     assert main(["--config", str(tmp_path / "nope.yml"), "report"]) == EXIT_ERROR
+
+
+def test_scanoss_match_in_ai_declared_code_is_not_shown_as_cited():
+    external = [{"path": "src/", "origin": "ai_declared", "notes": "Claude Code"}]
+    assert report._cited("src/app/page.tsx", external) == "AI-declared"
+    cited = [{"path": "src/vendor/", "origin": "third_party_cited", "notes": "MIT, in README"}]
+    assert report._cited("src/vendor/chart.js", cited) == "Yes"
