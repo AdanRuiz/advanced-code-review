@@ -112,13 +112,20 @@ def test_integrante_must_be_mapping():
     assert locations(errors) == ["equipos[0].integrantes[0]"]
 
 
-@pytest.mark.parametrize("field", ["nombre", "github"])
-def test_integrante_missing_field(field):
+def test_integrante_missing_nombre():
     member = dict(MEMBERS[0])
-    del member[field]
+    del member["nombre"]
     _, errors = validate_data(data(integrantes=[member]))
-    assert locations(errors) == [f"equipos[0].integrantes[0].{field}"]
+    assert locations(errors) == ["equipos[0].integrantes[0].nombre"]
     assert "falta" in errors[0].message
+
+
+def test_integrante_without_github_is_kept():
+    # A member with no GitHub account linked to commits still counts for point 1.2.
+    config, errors = validate_data(data(integrantes=[MEMBERS[0], {"nombre": "Diego Roca"}]))
+    assert errors == []
+    members = config.equipos[0].integrantes
+    assert [(m.nombre, m.github) for m in members][1] == ("Diego Roca", None)
 
 
 def test_integrante_empty_nombre():

@@ -324,6 +324,19 @@ def test_single_author_is_an_alert_and_missing_members_are_listed():
     assert "ALERTA: un solo autor" in summarize(signals) and "betoruiz" in summarize(signals)
 
 
+def test_member_without_github_is_matched_by_name_or_listed_without_commits():
+    members = (
+        Member(nombre="Ana Lopez", github="analopez"),
+        Member(nombre="Beto Ruiz"),
+        Member(nombre="Carla Diaz"),
+    )
+    signals = build_signals("equipo-01", EVENT, read_history_from(LOG), members)
+    by_name = {m["name"]: m["commits"] for m in signals["members"]}
+    assert by_name["Carla Diaz"] == 0
+    assert "Carla Diaz" in signals["members_without_commits"]
+    assert all(isinstance(x, str) for x in signals["members_without_commits"])
+
+
 def test_authors_without_members_list():
     signals = build_signals("equipo-01", EVENT, read_history_from(LOG))
     assert signals["members"] is None and signals["members_without_commits"] == []

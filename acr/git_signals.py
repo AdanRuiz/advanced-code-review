@@ -240,7 +240,7 @@ def match_member(name: str, email: str, members: Sequence[Member]) -> Member | N
     login = (_noreply_login(email) or "").casefold()
     plain_name = _normalize_name(name)
     for member in members:
-        if member.github.casefold() in (login, name.strip().casefold()):
+        if member.github and member.github.casefold() in (login, name.strip().casefold()):
             return member
     for member in members:
         if plain_name and _normalize_name(member.nombre) == plain_name:
@@ -295,7 +295,7 @@ def _authors(commits: list[Commit], members: Sequence[Member] | None) -> dict[st
         member = match_member(commit.author_name, commit.author_email, members or ())
         login = _noreply_login(commit.author_email)
         if member is not None:
-            key = ("member", member.github.casefold())
+            key = ("member", str(members.index(member)))
         elif login:
             key = ("github", login.casefold())
         else:
@@ -324,16 +324,19 @@ def _authors(commits: list[Commit], members: Sequence[Member] | None) -> dict[st
         "authors_not_members": 0,
     }
     if members is not None:
-        by_github = {row["github"].casefold(): row for row in rows if row["member"]}
+        by_member = {key[1]: row for key, row in authors.items() if key[0] == "member"}
         result["members"] = [
             {
                 "name": member.nombre,
                 "github": member.github,
-                "commits": by_github.get(member.github.casefold(), {}).get("commits", 0),
+                "commits": by_member.get(str(index), {}).get("commits", 0),
             }
-            for member in members
+            for index, member in enumerate(members)
         ]
-        result["members_without_commits"] = [m["github"] for m in result["members"] if not m["commits"]]
+        # GitHub user, or the name when the member has no linked account.
+        result["members_without_commits"] = [
+            m["github"] or m["name"] for m in result["members"] if not m["commits"]
+        ]
         result["authors_not_members"] = sum(1 for row in rows if not row["member"])
     return result
 

@@ -54,7 +54,7 @@ class Event:
 @dataclass(frozen=True)
 class Member:
     nombre: str
-    github: str
+    github: str | None = None  # None: no GitHub account linked to their commits
 
 
 @dataclass(frozen=True)
@@ -154,7 +154,11 @@ def _validate_event(raw: Any, errors: list[ValidationError]) -> Event | None:
 
 
 def _validate_members(where: str, raw: Any, errors: list[ValidationError]) -> tuple[Member, ...] | None:
-    """``integrantes``: a non-empty list of ``{nombre, github}`` with distinct GitHub users."""
+    """``integrantes``: a non-empty list of ``{nombre, github}`` with distinct GitHub users.
+
+    ``github`` is optional: a member without a known account is still listed, so point 1.2 can
+    report them as a member without linked commits.
+    """
     if not isinstance(raw, list) or not raw:
         errors.append(
             ValidationError(where, "debe ser una lista con al menos un integrante (nombre y github)")
@@ -182,8 +186,7 @@ def _validate_members(where: str, raw: Any, errors: list[ValidationError]) -> tu
 
         github = item.get("github")
         if github is None:
-            errors.append(ValidationError(f"{item_where}.github", "falta el campo obligatorio"))
-            item_ok = False
+            pass  # optional: the member is kept and matched by name
         elif not isinstance(github, str) or GITHUB_USER_RE.fullmatch(github.strip()) is None:
             errors.append(
                 ValidationError(
@@ -207,7 +210,7 @@ def _validate_members(where: str, raw: Any, errors: list[ValidationError]) -> tu
                 first_seen[key] = index
 
         if item_ok:
-            members.append(Member(nombre=nombre.strip(), github=github.strip()))
+            members.append(Member(nombre=nombre.strip(), github=github.strip() if github else None))
         else:
             ok = False
     return tuple(members) if ok else None

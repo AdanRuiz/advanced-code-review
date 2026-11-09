@@ -139,7 +139,7 @@ equipos:
 | `equipos[].objetivo` | Sí | Palabras clave para la búsqueda de plagio en la web |
 | `equipos[].repo` | Sí | URL git, carpeta local o archivo ZIP |
 | `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último commit de la rama anterior a `evento.fin` |
-| `equipos[].integrantes` | No | Nombre y usuario de GitHub de cada integrante; se comparan con los autores de los commits (punto 1.2) |
+| `equipos[].integrantes` | No | Nombre y, si se conoce, usuario de GitHub de cada integrante; se comparan con los autores de los commits por usuario o por nombre completo (punto 1.2). Un integrante sin usuario se lista igual y, si ningún commit coincide, cuenta como integrante sin commits |
 | `equipos[].presentacion` | No | URL de la presentación entregada, ruta local a su PDF exportado, o ruta a `presentacion.md`: texto, notas del orador y descripción de las imágenes extraídos del deck por el revisor; se compara con el código (punto 4.1). Con solo la URL, 4.1 queda en revisión manual |
 | `equipos[].prompts_ia` | No | Ruta local al PDF de prompts de IA entregado; se compara con lo declarado (punto 3.4) |
 
