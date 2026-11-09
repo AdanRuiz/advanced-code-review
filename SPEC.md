@@ -92,8 +92,8 @@ Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una 
 
 | Corre como | Componentes |
 | --- | --- |
-| Contenedor de un solo uso | MegaLinter |
-| CLI directo | scc, SCANOSS, Dolos, md-to-pdf |
+| Contenedor de un solo uso | MegaLinter, Dolos |
+| CLI directo | scc, SCANOSS, md-to-pdf |
 | Servicio local (`localhost`) | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/`, orquestador (API + página Configuración) |
 | Asistente | Claude Code |
 
@@ -194,7 +194,7 @@ Grafana es de solo lectura y el plugin de formularios (Business Forms) figura co
 | 4 | Secretos expuestos | Betterleaks (en MegaLinter) | Mismo contenedor | Por repositorio, con historial git | Seguridad, IA responsable | Grafana | Gratis |
 | 5 | Dependencias vulnerables (CVE + CVSS) | Trivy (en MegaLinter) | Mismo contenedor | Por repositorio | Seguridad, factibilidad | Grafana | Gratis |
 | 6 | Plagio de código externo | [SCANOSS](https://osskb.org/) (osskb.org) | CLI | Por repositorio | Plagio | Grafana (Infinity) | Gratis, con límite de uso |
-| 7 | Plagio entre equipos | Dolos | CLI | Una vez, todos los repositorios juntos | Plagio | Grafana (Infinity) | Gratis |
+| 7 | Plagio entre equipos | Dolos | 1 contenedor | Una vez, todos los repositorios juntos | Plagio | Grafana (Infinity) | Gratis |
 | 8 | Revisión asistida | Claude Code (`/code-review`, `/security-review`) | Lee reportes 1–7 | Por repositorio | Factibilidad, calidad, IA responsable | Grafana (Infinity) + reporte Markdown | Suscripción existente |
 | 9 | Plagio de ideas en la web | Claude Code + búsqueda web | Búsqueda por título, objetivo y palabras clave | Por proyecto | Plagio | Grafana (Infinity) | Suscripción existente |
 | — | Dashboard local | Grafana + Loki + Prometheus + [Infinity](https://grafana.com/docs/plugins/yesoreyeram-infinity-datasource/latest/) (Apache 2.0) | Servicio local | Todos los equipos | Consulta del revisor | Revisor | Gratis |
@@ -506,7 +506,8 @@ Además del reporte por equipo, el ZIP incluye `judge-questions.md` con las preg
 El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y sin publicarlo.
 
 - **Contenedores:** Podman (gratis sin restricciones) o Docker Desktop si el uso es personal o educativo.
-- **CLI:** scc, SCANOSS (Python), Dolos (Node.js).
+- **CLI:** scc, SCANOSS (Python).
+- **Dolos en contenedor:** imagen oficial `ghcr.io/dodona-edu/dolos-cli` con versión fija. En Windows, instalar Dolos con npm exige compilar `@dodona/dolos-parsers` con Visual Studio Build Tools (3–5 GB); la imagen pesa ~400 MB. Se monta `repos/` en solo lectura, sin red (`--network=none`) y con el mismo endurecimiento que MegaLinter; solo lee archivos y escribe CSV.
 - **Solo lectura:** `repos/<id>` queda sin permiso de escritura y ninguna herramienta lo modifica; MegaLinter trabaja sobre una copia desechable.
 - **No se ejecuta** el código de los equipos en este framework.
 - **SCANOSS** recibe solo huellas (hashes), no el código.

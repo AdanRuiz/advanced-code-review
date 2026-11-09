@@ -22,7 +22,7 @@ Las columnas Must, Should y Could cuentan ítems del agente; Humano, los que hac
 | --- | --- | --- | --- | --- | --- |
 | 0 | Preparación del entorno y del evento | — | — | — | 3 |
 | 1 | Núcleo de análisis por línea de comandos ✅ | 12 | — | — | — |
-| 2 | Reporte del evento según el checklist oficial | 5 | — | — | — |
+| 2 | Reporte del evento según el checklist oficial | 6 | — | — | — |
 | 3 | Dashboard Grafana local y orquestador | — | 8 | 4 | — |
 | 4 | Interfaz Next.js con JSON | — | — | 7 | 1 |
 | 5 | Publicación (Vercel) | — | — | 3 | 1 |
@@ -65,6 +65,7 @@ Lo que falta para que el reporte responda al [checklist oficial](SPEC.md#checkli
 | PB-58 | Must | Prompt de revisión según el checklist oficial | Revisión asistida; Plantillas, generadores y librerías | El prompt y `review.schema.json` piden en inglés la marca y evidencia de los puntos 1.3, 2.1, 2.2, 2.4, 3.1–3.4 y 4.1, la clasificación del código externo (plantilla oficial / generador / tercero citado o no / IA declarada o no), la lectura del PDF de prompts y de la presentación, y 3–6 preguntas para el jurado; tests del validador |
 | PB-59 | Must | Reporte en inglés según el checklist oficial | Entregables | `reporte.md` con la plantilla en inglés de la spec: tabla del checklist (Pass / Fail / Manual review con evidencia), evidencia de plagio, preguntas para el jurado, *Reviewer feedback* y anexo técnico que no puntúa; `reports/judge-questions.md` con todos los equipos; tests |
 | PB-23 | Must | Exportación de reportes | Exportación de reportes | `reporte.pdf` por equipo con md-to-pdf, `todos.zip` (reportes, `judge-questions.md` y CSV de Dolos) y botones del navbar que los descargan |
+| PB-60 | Must | Dolos en contenedor | Entorno, seguridad y privacidad (Dolos en contenedor); Detección de plagio | `acr dolos` corre la imagen `ghcr.io/dodona-edu/dolos-cli` con versión fija (`--image` para cambiarla) con `podman` o `docker`, `repos/` montado en solo lectura, `--network=none` y el endurecimiento de PB-40; rutas del CSV de entrada traducidas al contenedor; mismas salidas en `reports/dolos/`; si no hay motor de contenedores, error claro; tests sin red ni contenedor |
 
 ## Fase 3 — Dashboard Grafana local (Should) y orquestador (Could)
 
