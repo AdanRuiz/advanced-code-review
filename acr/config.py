@@ -239,7 +239,8 @@ def _local_pdf(where: str, value: str, base_dir: Path, errors: list[ValidationEr
 def _validate_document(
     where: str, field: str, value: Any, base_dir: Path, errors: list[ValidationError]
 ) -> str | None:
-    """``presentacion``: http(s) URL or local PDF. ``prompts_ia``: local PDF only."""
+    """``presentacion``: http(s) URL, local PDF or local Markdown extracted from the deck
+    (``equipos/<carpeta>/presentacion.md``). ``prompts_ia``: local PDF only."""
     if not _is_text(value):
         errors.append(ValidationError(where, "debe ser un texto no vacío"))
         return None
@@ -252,7 +253,25 @@ def _validate_document(
         else:
             errors.append(ValidationError(where, "debe ser la ruta a un PDF local, no una URL"))
         return None
+    if field == "presentacion" and Path(value).suffix.lower() == ".md":
+        return _local_markdown(where, value, base_dir, errors)
     return _local_pdf(where, value, base_dir, errors)
+
+
+def _local_markdown(where: str, value: str, base_dir: Path, errors: list[ValidationError]) -> str | None:
+    """Resolve a local Markdown file (deck text extracted by the reviewer) and check it is UTF-8."""
+    path = Path(value)
+    if not path.is_absolute():
+        path = base_dir / path
+    if not path.is_file():
+        errors.append(ValidationError(where, f"el archivo no existe ({value!r})"))
+        return None
+    try:
+        path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        errors.append(ValidationError(where, f"no se pudo leer como texto UTF-8 ({value!r}): {exc}"))
+        return None
+    return str(path.resolve())
 
 
 def _validate_checklist(

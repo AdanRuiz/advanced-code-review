@@ -53,7 +53,7 @@ Cada punto se marca como **cumple**, **no cumple** o **revisión manual**, con s
 | 3.2 | Instalación, dependencias y requisitos documentados | README y archivos de dependencias | Claude Code | Parcial |
 | 3.3 | Lenguaje claro, conciso y específico del proyecto | README | Claude Code | Parcial |
 | 3.4 | Código externo o generado y asistencia de IA declarados, integrados y entendidos | Declaración en README y PDF de prompts, frente a lo encontrado por SCANOSS y la búsqueda web; clasificación de código externo (ver [Plantillas, generadores y librerías](#plantillas-generadores-y-librerías)) | Claude Code | Parcial |
-| 4.1 | El código coincide con la funcionalidad de la demo | Funciones descritas en la presentación (PDF exportado en `entregas/`) frente al código | Claude Code (con `presentacion`) o revisión manual | Parcial |
+| 4.1 | El código coincide con la funcionalidad de la demo | Funciones descritas en la presentación (PDF exportado o `presentacion.md` extraído del deck) frente al código | Claude Code (con `presentacion`) o revisión manual | Parcial |
 | 4.2 | Diseño y UX consideran al usuario | — | — | No: revisión manual |
 | 4.3 | Sin API keys, secretos, credenciales ni datos privados en el repositorio | Hallazgos con historial de git, sin mostrar el valor | Betterleaks (MegaLinter) | Sí |
 
@@ -140,7 +140,7 @@ equipos:
 | `equipos[].repo` | Sí | URL git, carpeta local o archivo ZIP |
 | `equipos[].rama`, `commit` | No | Fijan la versión revisada; sin `commit` se toma el último commit de la rama anterior a `evento.fin` |
 | `equipos[].integrantes` | No | Nombre y usuario de GitHub de cada integrante; se comparan con los autores de los commits (punto 1.2) |
-| `equipos[].presentacion` | No | URL de la presentación entregada o ruta local a su PDF exportado en `entregas/`; se compara con el código (punto 4.1) |
+| `equipos[].presentacion` | No | URL de la presentación entregada, ruta local a su PDF exportado, o ruta a `presentacion.md`: texto, notas del orador y descripción de las imágenes extraídos del deck por el revisor; se compara con el código (punto 4.1). Con solo la URL, 4.1 queda en revisión manual |
 | `equipos[].prompts_ia` | No | Ruta local al PDF de prompts de IA entregado; se compara con lo declarado (punto 3.4) |
 
 **Reglas:**

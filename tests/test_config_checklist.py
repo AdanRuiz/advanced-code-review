@@ -171,6 +171,28 @@ def test_every_integrante_error_is_reported():
 # --- presentacion and prompts_ia ---------------------------------------------------------------
 
 
+def test_presentacion_accepts_local_markdown_extracted_from_the_deck(tmp_path):
+    deck = tmp_path / "presentacion.md"
+    deck.write_text("# Equipo — Pitch deck\n\nÑandú ā\n", encoding="utf-8")
+    config, errors = validate_data(data(presentacion=str(deck)))
+    assert errors == []
+    assert config.equipos[0].presentacion == str(deck.resolve())
+
+
+def test_presentacion_markdown_must_exist(tmp_path):
+    _, errors = validate_data(data(presentacion=str(tmp_path / "no-existe.md")))
+    assert locations(errors) == ["equipos[0].presentacion"]
+    assert "no existe" in errors[0].message
+
+
+def test_prompts_ia_does_not_accept_markdown(tmp_path):
+    notes = tmp_path / "prompts.md"
+    notes.write_text("prompts", encoding="utf-8")
+    _, errors = validate_data(data(prompts_ia=str(notes)))
+    assert locations(errors) == ["equipos[0].prompts_ia"]
+    assert ".pdf" in errors[0].message
+
+
 @pytest.mark.parametrize("field", ["presentacion", "prompts_ia"])
 def test_local_pdf_must_exist(tmp_path, field):
     _, errors = validate_data(data(**{field: str(tmp_path / "no-existe.pdf")}))
