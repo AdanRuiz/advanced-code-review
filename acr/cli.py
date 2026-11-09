@@ -14,6 +14,7 @@ from acr import __version__
 from acr.analyze import STATUS_FILE, default_dolos, default_steps, run_analysis
 from acr.analyze import Options as AnalyzeOptions
 from acr.config import Config, Team, load_config, missing_checklist_fields
+from acr.dolos import DEFAULT_IMAGE as DEFAULT_DOLOS_IMAGE
 from acr.dolos import DolosError, write_dolos
 from acr.export import ExportError, write_pdf, write_zip
 from acr.fetch import DEFAULT_MAX_ZIP_BYTES, DEFAULT_REPOS_DIR, FetchError, fetch_team
@@ -255,7 +256,9 @@ def _dolos(args: argparse.Namespace) -> int:
         else:
             print(f"{team.id}: aviso: no se compara; corre 'acr fetch {team.id}'", file=sys.stderr)
     try:
-        result = write_dolos(fetched, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR)
+        result = write_dolos(
+            fetched, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR, engine=args.engine, image=args.image
+        )
     except (DolosError, OSError) as exc:
         print(f"acr dolos: error: {exc}", file=sys.stderr)
         return EXIT_ERROR
@@ -311,6 +314,7 @@ def _analyze(args: argparse.Namespace) -> int:
         engine=args.engine,
         image=args.image,
         megalinter_timeout=args.timeout_min * 60,
+        dolos_image=args.dolos_image,
     )
     result = run_analysis(
         config,
@@ -694,8 +698,20 @@ def build_parser() -> argparse.ArgumentParser:
         "dolos",
         help="compara el código de todos los equipos con Dolos y deja la similitud por par en "
         "reports/dolos/pairs.csv",
-        description="Corre Dolos una sola vez sobre todos los repositorios obtenidos, por lenguaje. "
-        "Solo lee los archivos; nunca ejecuta el código ni lo envía fuera de la máquina.",
+        description="Corre Dolos una sola vez sobre todos los repositorios obtenidos, por lenguaje, "
+        "en un contenedor sin red con repos/ en solo lectura. Solo lee los archivos; nunca ejecuta "
+        "el código ni lo envía fuera de la máquina.",
+    )
+    dolos.add_argument(
+        "--engine",
+        choices=ENGINES,
+        default=None,
+        help="motor de contenedores (por defecto: podman si está instalado, si no docker)",
+    )
+    dolos.add_argument(
+        "--image",
+        default=DEFAULT_DOLOS_IMAGE,
+        help="imagen de Dolos (por defecto: %(default)s)",
     )
     dolos.set_defaults(handler=_dolos)
 
@@ -716,12 +732,18 @@ def build_parser() -> argparse.ArgumentParser:
         "--engine",
         choices=ENGINES,
         default=None,
-        help="motor de contenedores para MegaLinter (por defecto: podman si está instalado, si no docker)",
+        help="motor de contenedores para MegaLinter y Dolos (por defecto: podman si está instalado, "
+        "si no docker)",
     )
     analyze.add_argument(
         "--image",
         default=DEFAULT_IMAGE,
         help="imagen de MegaLinter, v10 o superior (por defecto: %(default)s)",
+    )
+    analyze.add_argument(
+        "--dolos-image",
+        default=DEFAULT_DOLOS_IMAGE,
+        help="imagen de Dolos (por defecto: %(default)s)",
     )
     analyze.add_argument(
         "--timeout-min",

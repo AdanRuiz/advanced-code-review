@@ -342,8 +342,8 @@ def fake_tools(monkeypatch):
         pairs_path = Path("reports/dolos/pairs.csv")
         summary = {"totals": {"team_pairs_with_matches": 1, "team_pairs": 1}}
 
-    def write_dolos(team_ids, repos_dir, reports_dir):
-        calls.append(f"dolos:{','.join(team_ids)}")
+    def write_dolos(team_ids, repos_dir, reports_dir, *, engine, image):
+        calls.append(f"dolos:{','.join(team_ids)}:{engine}:{image}")
         return DolosResult()
 
     for name, fake in {
@@ -396,14 +396,14 @@ def test_cli_analyze_all(tmp_path, monkeypatch, capsys, fake_tools):
     monkeypatch.chdir(tmp_path)
     config = write_config(tmp_path, ["equipo-01", "equipo-02"])
     args = ["--config", str(config), "analyze", "--engine", "docker"]
-    args += ["--timeout-min", "5", "--max-zip-mb", "2"]
+    args += ["--timeout-min", "5", "--max-zip-mb", "2", "--dolos-image", "dolos:test"]
     assert main(args) == EXIT_OK
     out = capsys.readouterr().out
     assert "equipo-01: scc: ok:" in out
     assert "2 equipo(s) listo(s), 0 con error, 0 ya en curso -> reports/status.json" in out
     assert "fetch:equipo-01:2097152" in fake_tools
     assert "megalinter:equipo-02:docker:ghcr.io/oxsecurity/megalinter:v10:300" in fake_tools
-    assert fake_tools[-1] == "dolos:equipo-01,equipo-02"
+    assert fake_tools[-1] == "dolos:equipo-01,equipo-02:docker:dolos:test"
     states = [team["state"] for team in read_status(tmp_path / "reports")["teams"]]
     assert states == ["listo", "listo"]
     # PB-21: the Seguridad page data is refreshed for every team at the end.
