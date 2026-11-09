@@ -106,6 +106,17 @@ def test_read_history_runs_only_safe_read_commands(tmp_path):
     assert "--no-ext-diff" in fake.calls[1] and "--no-textconv" in fake.calls[1]
 
 
+def test_git_output_is_decoded_as_utf8_without_failing(tmp_path):
+    # Windows decodes with cp1252 by default: UTF-8 commit messages (byte 0x81 in "ā") made the
+    # reader thread fail and stdout came back as None.
+    repo = make_repo(tmp_path)
+    fake = FakeGit()
+    read_history(repo, runner=fake)
+    for kwargs in fake.kwargs:
+        assert kwargs["text"] is True
+        assert kwargs["encoding"] == "utf-8" and kwargs["errors"] == "replace"
+
+
 def test_no_git_folder_means_no_history(tmp_path):
     repo = make_repo(tmp_path, git=False)
     fake = FakeGit()

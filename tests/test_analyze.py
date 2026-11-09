@@ -243,6 +243,19 @@ def test_lock_is_held_during_the_run(tmp_path):
     assert entries(rec.reports)["equipo-01"]["steps"] == {"scc": "ok"}
 
 
+def test_unexpected_step_error_is_recorded_and_the_run_continues(tmp_path):
+    # A bug in one step (here an AttributeError) must not stop the other teams or Dolos.
+    bug = AttributeError("'NoneType' object has no attribute 'split'")
+    rec = Recorder(tmp_path, fail={"git-signals:equipo-01": bug})
+    result = rec.run(make_config("equipo-01", "equipo-02"))
+
+    assert ("scanoss", "equipo-01") in rec.calls and ("dolos", "equipo-01,equipo-02") in rec.calls
+    assert result.failed == ["equipo-01"] and result.analyzed == ["equipo-02"]
+    team = entries(rec.reports)["equipo-01"]
+    assert team["steps"]["git-signals"] == "error"
+    assert team["error"].startswith("git-signals: error inesperado (AttributeError:")
+
+
 def test_interrupted_run_marks_error_and_releases_lock(tmp_path):
     rec = Recorder(tmp_path)
 

@@ -381,10 +381,13 @@ def run_analysis(
                 status({team.id: entry})
                 try:
                     summary = step(team)
-                except STEP_ERRORS as exc:
+                except Exception as exc:  # noqa: BLE001 - one team's failure must not stop the others
+                    detail = str(exc)
+                    if not isinstance(exc, STEP_ERRORS):
+                        detail = f"error inesperado ({type(exc).__name__}: {exc})"
                     entry["steps"][name] = STEP_ERROR
-                    errors.append(f"{name}: {exc}")
-                    log.write(f"{name}: error: {exc}")
+                    errors.append(f"{name}: {detail}")
+                    log.write(f"{name}: error: {detail}")
                     if name == FETCH_STEP:
                         break
                 else:

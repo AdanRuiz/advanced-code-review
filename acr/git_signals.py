@@ -122,6 +122,8 @@ def _git(runner: Runner | None, git_dir: Path, args: list[str]) -> subprocess.Co
             ["git", *_SAFE_CONFIG, f"--git-dir={git_dir}", *args],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             env=env,
             timeout=GIT_TIMEOUT_SECONDS,
             check=False,
