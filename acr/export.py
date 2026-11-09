@@ -60,27 +60,33 @@ def write_pdf(
     if not source.is_file():
         raise ExportError(f"no existe {source.as_posix()}; corre 'acr report {team_id}'")
 
-    with tempfile.TemporaryDirectory(prefix="acr-pdf-") as tmp:
+    # ignore_cleanup_errors: after a timeout the md-to-pdf child (node/Chromium) may still hold files.
+    with tempfile.TemporaryDirectory(prefix="acr-pdf-", ignore_cleanup_errors=True) as tmp:
         work = Path(tmp)
         markdown = work / REPORT_FILE
         shutil.copyfile(source, markdown)
-        try:
-            result = (runner or subprocess.run)(
-                [_md_to_pdf_command(), "--basedir", str(work), str(markdown)],
-                cwd=work,
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                timeout=MD_TO_PDF_TIMEOUT_SECONDS,
-                check=False,
-            )
-        except FileNotFoundError as exc:
-            raise ExportError("md-to-pdf no está instalado o no está en el PATH (ver PB-1)") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise ExportError(f"md-to-pdf tardó más de {MD_TO_PDF_TIMEOUT_SECONDS // 60} minutos") from exc
+        # Output goes to an unnamed temp file, not a pipe: on Windows the timeout kills only
+        # md-to-pdf.cmd, and its node child kept the pipes open, so the run never returned.
+        with tempfile.TemporaryFile() as output:
+            try:
+                result = (runner or subprocess.run)(
+                    [_md_to_pdf_command(), "--basedir", str(work), str(markdown)],
+                    cwd=work,
+                    stdout=output,
+                    stderr=output,
+                    timeout=MD_TO_PDF_TIMEOUT_SECONDS,
+                    check=False,
+                )
+            except FileNotFoundError as exc:
+                raise ExportError("md-to-pdf no está instalado o no está en el PATH (ver PB-1)") from exc
+            except subprocess.TimeoutExpired as exc:
+                minutes = MD_TO_PDF_TIMEOUT_SECONDS // 60
+                raise ExportError(f"md-to-pdf tardó más de {minutes} minutos") from exc
+            output.seek(0)
+            captured = output.read().decode("utf-8", errors="replace")
         if result.returncode != 0:
-            detail = (result.stderr or "").strip().splitlines()
+            stderr = result.stderr if isinstance(result.stderr, str) else ""
+            detail = (stderr or captured).strip().splitlines()
             raise ExportError(f"md-to-pdf falló: {detail[-1] if detail else f'código {result.returncode}'}")
         produced = markdown.with_suffix(".pdf")
         try:

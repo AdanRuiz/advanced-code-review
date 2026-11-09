@@ -234,3 +234,26 @@ def test_cli_export_without_md_to_pdf_still_writes_markdown_and_zip(tmp_path, mo
     assert "equipo-01: error al exportar: md-to-pdf no está instalado" in err
     with zipfile.ZipFile(tmp_path / "reports" / ZIP_FILE) as archive:
         assert archive.namelist() == ["equipo-01/reporte.md", "judge-questions.md"]
+
+
+def test_md_to_pdf_output_goes_to_a_file_not_a_pipe(tmp_path):
+    # With pipes, a Windows timeout killed md-to-pdf.cmd but its node child kept them open
+    # and the run never returned.
+    make_report(tmp_path)
+    fake = FakeMdToPdf()
+    write_pdf("equipo-01", tmp_path, runner=fake)
+    kwargs = fake.calls[0]["kwargs"]
+    assert "capture_output" not in kwargs
+    assert kwargs["stdout"] is not subprocess.PIPE and hasattr(kwargs["stdout"], "fileno")
+    assert kwargs["stderr"] is kwargs["stdout"]
+
+
+def test_md_to_pdf_error_detail_is_read_from_the_output_file(tmp_path):
+    make_report(tmp_path)
+
+    def failing(args, **kwargs):
+        kwargs["stdout"].write(b"starting\nChromium no arranco\n")
+        return subprocess.CompletedProcess(args, 1, None, None)
+
+    with pytest.raises(ExportError, match="Chromium no arranco"):
+        write_pdf("equipo-01", tmp_path, runner=failing)
