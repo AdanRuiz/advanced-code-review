@@ -83,6 +83,9 @@ def make_repo(root: Path, team_id: str = "equipo-01") -> Path:
 
 def run(tmp_path, fake, **kwargs):
     kwargs.setdefault("which", always)
+    temp = tmp_path / "tmp"
+    temp.mkdir(exist_ok=True)
+    kwargs.setdefault("temp_dir", temp)
     return run_megalinter("equipo-01", tmp_path / "repos", tmp_path / "reports", runner=fake, **kwargs)
 
 
@@ -116,6 +119,9 @@ def test_config_file_sends_nothing_out_and_hides_secrets():
                 "GITHUB_COMMENT_REPORTER", "GITLAB_COMMENT_REPORTER", "AZURE_COMMENT_REPORTER",
                 "BITBUCKET_COMMENT_REPORTER", "UPDATED_SOURCES_REPORTER"):
         assert config[key] is False, key
+    # Linters that reach the network with repository data, or duplicate Betterleaks/Semgrep.
+    disabled = set(config["DISABLE_LINTERS"])
+    assert {"SPELL_LYCHEE", "REPOSITORY_DUSTILOCK", "REPOSITORY_KINGFISHER", "REPOSITORY_DEVSKIM"} <= disabled
     assert "--metrics=off" in config["REPOSITORY_SEMGREP_ARGUMENTS"]
     assert "--redact" in config["REPOSITORY_BETTERLEAKS_ARGUMENTS"]
 
@@ -138,14 +144,15 @@ def test_find_engine_missing_or_unsupported():
         find_engine("nerdctl", which=always)
 
 
-def test_command_mounts_repo_and_config_read_only_and_reports_outside(tmp_path):
-    repo = make_repo(tmp_path)
+def test_command_mounts_workspace_copy_config_read_only_and_reports_outside(tmp_path):
+    workspace = make_repo(tmp_path)
     out = tmp_path / "reports" / "equipo-01" / ".megalinter.tmp"
-    cmd = build_command("podman", "img:v10", "equipo-01", repo, out, DEFAULT_CONFIG_FILE)
+    cmd = build_command("podman", "img:v10", "equipo-01", workspace, out, DEFAULT_CONFIG_FILE)
     assert cmd[:5] == ["podman", "run", "--rm", "--name", "acr-megalinter-equipo-01"]
     assert cmd[-1] == "img:v10"
     m = mounts(cmd)
-    assert m[WORKSPACE]["source"] == str(repo.resolve()) and m[WORKSPACE]["readonly"] == "true"
+    # MegaLinter v10 writes temporary files in the workspace: it gets a writable disposable copy.
+    assert m[WORKSPACE]["source"] == str(workspace.resolve()) and "readonly" not in m[WORKSPACE]
     assert m[CONFIG_TARGET]["source"] == str(DEFAULT_CONFIG_FILE) and m[CONFIG_TARGET]["readonly"] == "true"
     assert m[REPORTS_TARGET]["source"] == str(out.resolve()) and "readonly" not in m[REPORTS_TARGET]
     assert all(options["type"] == "bind" for options in m.values())
@@ -199,7 +206,68 @@ def test_command_rejects_paths_that_break_mount_syntax(tmp_path):
 
 
 def test_default_image_is_megalinter_v10():
-    assert megalinter.DEFAULT_IMAGE.endswith("oxsecurity/megalinter:v10")
+    # v10 is published on ghcr.io; docker.io/oxsecurity/megalinter stops at v9.
+    assert megalinter.DEFAULT_IMAGE == "ghcr.io/oxsecurity/megalinter:v10"
+
+
+# --- disposable workspace copy -------------------------------------------------------------
+
+
+def test_run_mounts_a_copy_not_the_fetched_repo_and_deletes_it(tmp_path):
+    repo = make_repo(tmp_path)
+    seen = {}
+
+    class Recorder(FakeMegaLinter):
+        def __call__(self, cmd, **kwargs):
+            source = Path(mounts(cmd)[WORKSPACE]["source"])
+            seen["source"] = source
+            seen["content"] = (source / "main.py").read_text(encoding="utf-8")
+            (source / "megalinter_temp.txt").write_text("x", encoding="utf-8")  # writable
+            return super().__call__(cmd, **kwargs)
+
+    run(tmp_path, Recorder())
+    source = seen["source"]
+    assert source != repo.resolve() and repo.resolve() not in source.parents
+    assert (tmp_path / "tmp").resolve() in source.parents
+    assert seen["content"] == "print('hola')\n"
+    assert not source.exists() and not source.parent.exists()  # copy deleted
+    assert sorted(p.name for p in repo.iterdir()) == ["main.py"]  # original untouched
+
+
+def test_copy_is_deleted_when_megalinter_fails(tmp_path):
+    make_repo(tmp_path)
+    with pytest.raises(MegaLinterError):
+        run(tmp_path, FakeMegaLinter(code=2, stderr="boom"))
+    assert list((tmp_path / "tmp").iterdir()) == []
+
+
+def test_writable_copy_of_read_only_repo(tmp_path):
+    repo = make_repo(tmp_path)
+    (repo / "sub").mkdir()
+    (repo / "sub" / "a.txt").write_text("a", encoding="utf-8")
+    from acr.fetch import make_read_only, remove_tree
+
+    make_read_only(repo)
+    try:
+        copy = megalinter.writable_copy(repo, tmp_path, "equipo-01")
+        (copy / "new.txt").write_text("x", encoding="utf-8")
+        (copy / "sub" / "a.txt").write_text("changed", encoding="utf-8")
+        assert (repo / "sub" / "a.txt").read_text(encoding="utf-8") == "a"
+        remove_tree(copy.parent)
+    finally:
+        remove_tree(repo)
+
+
+def test_writable_copy_keeps_symlinks_as_links(tmp_path):
+    repo = make_repo(tmp_path)
+    outside = tmp_path / "secret.txt"
+    outside.write_text("host secret", encoding="utf-8")
+    try:
+        (repo / "link").symlink_to(outside)
+    except OSError:
+        pytest.skip("symlinks not available on this system")
+    copy = megalinter.writable_copy(repo, tmp_path, "equipo-01")
+    assert (copy / "link").is_symlink()  # the host file is not copied into the workspace
 
 
 # --- running -------------------------------------------------------------------------------

@@ -376,7 +376,7 @@ def test_default_steps_order_and_summaries(tmp_path, fake_tools):
     assert "2 lenguaje(s), 120 línea(s)" in summaries[2]
     assert "con errores de linters" in summaries[3] and "trivy.sarif" in summaries[3]
     assert "1 de 9 archivo(s)" in summaries[4]
-    assert fake_tools[3] == "megalinter:equipo-01:podman:docker.io/oxsecurity/megalinter:v10:3600"
+    assert fake_tools[3] == "megalinter:equipo-01:podman:ghcr.io/oxsecurity/megalinter:v10:3600"
 
 
 def write_config(tmp_path: Path, ids: list[str]) -> Path:
@@ -402,7 +402,7 @@ def test_cli_analyze_all(tmp_path, monkeypatch, capsys, fake_tools):
     assert "equipo-01: scc: ok:" in out
     assert "2 equipo(s) listo(s), 0 con error, 0 ya en curso -> reports/status.json" in out
     assert "fetch:equipo-01:2097152" in fake_tools
-    assert "megalinter:equipo-02:docker:docker.io/oxsecurity/megalinter:v10:300" in fake_tools
+    assert "megalinter:equipo-02:docker:ghcr.io/oxsecurity/megalinter:v10:300" in fake_tools
     assert fake_tools[-1] == "dolos:equipo-01,equipo-02"
     states = [team["state"] for team in read_status(tmp_path / "reports")["teams"]]
     assert states == ["listo", "listo"]

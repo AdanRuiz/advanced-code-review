@@ -2,7 +2,8 @@
 #
 # `acr megalinter` monta este archivo en el contenedor y lo usa en lugar de cualquier
 # `.mega-linter.yml` que traiga el repositorio del equipo (MEGALINTER_CONFIG).
-# El repositorio se monta en solo lectura y los reportes se escriben fuera de él.
+# Se monta una copia desechable del repositorio (MegaLinter v10 escribe archivos temporales en
+# ella); repos/<id> nunca se monta ni se modifica, y los reportes se escriben fuera de la copia.
 
 # Analizar todo el repositorio, no solo los cambios, y nunca modificarlo.
 VALIDATE_ALL_CODEBASE: true
@@ -19,6 +20,14 @@ DISABLE_LINTERS:
   # Dependencias (duplican a Trivy)
   - REPOSITORY_OSV_SCANNER
   - REPOSITORY_GRYPE
+  # Secretos y código inseguro (duplican a Betterleaks y Semgrep; Kingfisher además puede
+  # validar secretos contra servicios en línea)
+  - REPOSITORY_KINGFISHER
+  - REPOSITORY_DEVSKIM
+  # Salen a internet con datos del repositorio (AGENTS.md: nada sale de la máquina):
+  # lychee visita los enlaces y Dustilock consulta registros públicos de paquetes
+  - SPELL_LYCHEE
+  - REPOSITORY_DUSTILOCK
 
 # Semgrep: reglas de OWASP Top 10 y CWE, sin enviar métricas (AGENTS.md: nada sale de la máquina).
 REPOSITORY_SEMGREP_RULESETS:

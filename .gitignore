@@ -16,3 +16,6 @@ __pycache__/
 
 # Correspondencia con organizadores (correos y documentos de solo lectura)
 reponse/
+
+# Datos de las entregas de los equipos
+equipos/

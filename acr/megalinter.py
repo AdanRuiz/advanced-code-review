@@ -2,8 +2,9 @@
 
 Runs the MegaLinter container (v10 or later) once per team with ``podman`` (or ``docker``):
 
-- ``repos/<id>`` is mounted read-only as the workspace; the team's code is only read by the
-  linters, never run or modified.
+- a disposable copy of ``repos/<id>`` in the system temp folder is mounted as the workspace,
+  because MegaLinter v10 writes temporary files there; ``repos/<id>`` itself is never mounted
+  or modified, the copy is deleted after the run, and the team's code is never run.
 - the project's ``.mega-linter.yml`` is mounted read-only and forced with ``MEGALINTER_CONFIG``,
   so a configuration file inside the team's repository is ignored.
 - reports are written outside the repository, to a staging folder under ``reports/<id>/``.
@@ -19,8 +20,11 @@ Otherwise the previous reports are kept.
 from __future__ import annotations
 
 import json
+import os
 import shutil
+import stat
 import subprocess
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -29,7 +33,8 @@ from acr.config import is_valid_team_id
 from acr.fetch import remove_tree
 
 DEFAULT_REPORTS_DIR = Path("reports")
-DEFAULT_IMAGE = "docker.io/oxsecurity/megalinter:v10"
+# MegaLinter v10 is published on GitHub Container Registry; Docker Hub stops at v9.
+DEFAULT_IMAGE = "ghcr.io/oxsecurity/megalinter:v10"
 DEFAULT_CONFIG_FILE = Path(__file__).resolve().parent.parent / ".mega-linter.yml"
 DEFAULT_TIMEOUT_SECONDS = 60 * 60
 ENGINES = ("podman", "docker")
@@ -98,12 +103,12 @@ def _bind(source: Path, target: str, read_only: bool) -> str:
 
 
 def build_command(
-    engine: str, image: str, team_id: str, repo: Path, output: Path, config_file: Path
+    engine: str, image: str, team_id: str, workspace: Path, output: Path, config_file: Path
 ) -> list[str]:
     """Hardened container command line.
 
-    The only host paths mounted are the repository and the configuration (read-only) and the
-    reports folder (outside the repository).
+    The only host paths mounted are the disposable copy of the repository (writable, see
+    ``writable_copy``), the configuration (read-only) and the reports folder.
     """
     return [
         engine,
@@ -113,7 +118,7 @@ def build_command(
         container_name(team_id),
         *HARDENING_OPTIONS,
         "--mount",
-        _bind(repo, WORKSPACE, read_only=True),
+        _bind(workspace, WORKSPACE, read_only=False),
         "--mount",
         _bind(config_file, CONFIG_TARGET, read_only=True),
         "--mount",
@@ -126,6 +131,24 @@ def build_command(
         f"REPORT_OUTPUT_FOLDER={REPORTS_TARGET}",
         image,
     ]
+
+
+def writable_copy(repo: Path, parent: Path | None = None, team_id: str = "repo") -> Path:
+    """Copy ``repo`` to a new folder under ``parent`` (default: system temp) and make it writable.
+
+    Symbolic links are copied as links, never followed, so nothing outside the repository is
+    copied. File modes are not copied: ``repos/<id>`` is read-only on disk (``acr fetch``).
+    """
+    root = Path(tempfile.mkdtemp(prefix=f"acr-megalinter-{team_id}-", dir=parent))
+    workspace = root / "workspace"
+    shutil.copytree(repo, workspace, symlinks=True, copy_function=shutil.copyfile)
+    for dirpath, dirnames, filenames in os.walk(workspace):
+        for name in [*dirnames, *filenames]:
+            path = Path(dirpath, name)
+            if not path.is_symlink():
+                path.chmod(path.stat().st_mode | stat.S_IWUSR | stat.S_IRUSR)
+    workspace.chmod(workspace.stat().st_mode | stat.S_IWUSR | stat.S_IRUSR)
+    return workspace
 
 
 def _last_line(text: str | None) -> str | None:
@@ -201,8 +224,12 @@ def run_megalinter(
     timeout: int = DEFAULT_TIMEOUT_SECONDS,
     runner: Runner | None = None,
     which: Which = shutil.which,
+    temp_dir: Path | None = None,
 ) -> MegaLinterResult:
-    """Run MegaLinter on ``repos_dir/<id>`` and write its reports to ``reports_dir/<id>/``."""
+    """Run MegaLinter on a disposable copy of ``repos_dir/<id>``; reports go to ``reports_dir/<id>/``.
+
+    ``temp_dir`` is where the copy is made (default: the system temp folder).
+    """
     if not is_valid_team_id(team_id):
         raise MegaLinterError(f"id inválido ({team_id!r})")
     repo = repos_dir / team_id
@@ -217,8 +244,14 @@ def run_megalinter(
     staging = out_dir / STAGING_DIR
     remove_tree(staging)
     staging.mkdir()
+    workspace = None
     try:
-        cmd = build_command(chosen, image, team_id, repo, staging, config_file)
+        try:
+            workspace = writable_copy(repo, temp_dir, team_id)
+        except OSError as exc:
+            message = f"no se pudo copiar {repo.as_posix()} a la carpeta temporal: {exc}"
+            raise MegaLinterError(message) from exc
+        cmd = build_command(chosen, image, team_id, workspace, staging, config_file)
         returncode = _run_container(cmd, chosen, team_id, runner or subprocess.run, timeout)
         _check_reports(staging)
         sarif = _linter_sarif(staging)
@@ -228,6 +261,8 @@ def run_megalinter(
         staging.replace(raw)
     finally:
         remove_tree(staging)
+        if workspace is not None:
+            remove_tree(workspace.parent)
 
     files = []
     for name in MAIN_REPORTS:

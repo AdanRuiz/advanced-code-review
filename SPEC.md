@@ -208,14 +208,16 @@ MegaLinter corre una sola vez por repositorio y cubre los pasos 2 a 5. Las herra
 | Categoría | Activo | Desactivado (duplica) |
 | --- | --- | --- |
 | Calidad | Linters del lenguaje detectado automáticamente | — |
-| Seguridad del código | Semgrep | — |
-| Secretos | Betterleaks | Gitleaks (deprecado en v9.6), TruffleHog, Secretlint |
+| Seguridad del código | Semgrep | DevSkim |
+| Secretos | Betterleaks | Gitleaks (deprecado en v9.6), TruffleHog, Secretlint, Kingfisher |
 | Dependencias | Trivy | OSV-Scanner, Grype |
+| Salen a internet con datos del repositorio | — | lychee (enlaces), Dustilock (registros de paquetes) |
 
 **Requisitos de configuración (`.mega-linter.yml`):**
 
 - Versión 10 o superior, para los dashboards de Grafana con "Why this rating?".
-- Repositorio montado en solo lectura; reportes escritos fuera del repositorio.
+- Se monta una copia desechable del repositorio en la carpeta temporal del sistema (MegaLinter v10 escribe archivos temporales en el espacio de trabajo); `repos/<id>` nunca se monta ni se modifica y la copia se borra al terminar. Reportes escritos fuera de la copia.
+- Imagen `ghcr.io/oxsecurity/megalinter:v10` (Docker Hub solo publica hasta v9).
 - Salida SARIF y Markdown por repositorio (respaldo si Grafana no está disponible).
 - `API_REPORTER: true` y `API_REPORTER_PROVIDER: grafana`, con las URLs de Loki y Prometheus.
 - Nombre del repositorio = identificador del equipo, para que el dashboard los distinga.
@@ -505,7 +507,7 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 
 - **Contenedores:** Podman (gratis sin restricciones) o Docker Desktop si el uso es personal o educativo.
 - **CLI:** scc, SCANOSS (Python), Dolos (Node.js).
-- **Solo lectura:** los repositorios se montan sin permiso de escritura; ninguna herramienta los modifica.
+- **Solo lectura:** `repos/<id>` queda sin permiso de escritura y ninguna herramienta lo modifica; MegaLinter trabaja sobre una copia desechable.
 - **No se ejecuta** el código de los equipos en este framework.
 - **SCANOSS** recibe solo huellas (hashes), no el código.
 - **Secretos encontrados** se reportan a los organizadores; no se publican en el dashboard en texto plano.
