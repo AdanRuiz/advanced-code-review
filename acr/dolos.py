@@ -169,13 +169,23 @@ def container_path(team_id: str, relative: str) -> str:
     return posixpath.join(REPOS_TARGET, team_id, relative)
 
 
+def info_csv_path(team_id: str, relative: str) -> str:
+    """Path written in the info CSV: relative to the CSV's folder (``/work``).
+
+    Dolos joins the CSV's folder with every ``filename`` (Node ``path.join``), even an absolute
+    one, so ``/repos/x`` would be read as ``/work/repos/x`` and fail with "The given '.csv'-file
+    could not be opened".
+    """
+    return posixpath.relpath(container_path(team_id, relative), WORK_TARGET)
+
+
 def _write_info_csv(target: Path, files: dict[str, list[str]]) -> None:
     buffer = io.StringIO()
     writer = csv.writer(buffer, lineterminator="\n")
     writer.writerow(["filename", "label"])
     for team_id in sorted(files):
         for relative in files[team_id]:
-            writer.writerow([container_path(team_id, relative), team_id])
+            writer.writerow([info_csv_path(team_id, relative), team_id])
     target.write_text(buffer.getvalue(), encoding="utf-8")
 
 

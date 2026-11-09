@@ -72,14 +72,23 @@ class FakeDolos:
         info = to_host(cmd, cmd[-1])
         rows = list(csv.DictReader(io.StringIO(info.read_text(encoding="utf-8"))))
         self.infos.append(rows)
-        if not self.write_output:
-            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         workdir = cmd[cmd.index("--workdir") + 1]
         files = []
         for row in rows:
-            name = row["filename"]
+            # Like Dolos (Node path.join): the CSV's folder is joined with every filename, even an
+            # absolute one; a missing file fails the whole run.
+            name = posixpath.normpath(posixpath.dirname(cmd[-1]) + "/" + row["filename"])
+            try:
+                host = to_host(cmd, name)
+                text = host.read_text(encoding="utf-8")
+            except (AssertionError, OSError):
+                return subprocess.CompletedProcess(
+                    cmd, 1, stdout="", stderr="[error] The given '.csv'-file could not be opened\n"
+                )
             shown = posixpath.relpath(name, workdir) if self.relative_paths else name
-            files.append((shown, to_host(cmd, name).read_text(encoding="utf-8")))
+            files.append((shown, text))
+        if not self.write_output:
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         lines = [DOLOS_HEADER]
         for n, ((left, a), (right, b)) in enumerate(combinations(files, 2)):
             if a == b:
@@ -251,13 +260,14 @@ def test_write_dolos_runs_once_per_shared_language(tmp_path, relative_paths):
     assert "serve" not in cmd and "--host" not in cmd
     assert fake.kwargs[0]["timeout"] == dolos.TIMEOUT_SECONDS
     assert "cwd" not in fake.kwargs[0]
-    # The info CSV lists container paths, never host paths.
+    # The info CSV lists container paths relative to its folder (/work), never host paths:
+    # Dolos joins the CSV's folder with every filename, even an absolute one.
     assert sorted((row["label"], row["filename"]) for row in fake.infos[0]) == [
-        ("equipo-01", "/repos/equipo-01/app/cart.py"),
-        ("equipo-01", "/repos/equipo-01/app/main.py"),
-        ("equipo-02", "/repos/equipo-02/src/cart.py"),
-        ("equipo-02", "/repos/equipo-02/src/copy.py"),
-        ("equipo-02", "/repos/equipo-02/src/other.py"),
+        ("equipo-01", "../repos/equipo-01/app/cart.py"),
+        ("equipo-01", "../repos/equipo-01/app/main.py"),
+        ("equipo-02", "../repos/equipo-02/src/cart.py"),
+        ("equipo-02", "../repos/equipo-02/src/copy.py"),
+        ("equipo-02", "../repos/equipo-02/src/other.py"),
     ]
 
     out = tmp_path / "reports" / "dolos"
