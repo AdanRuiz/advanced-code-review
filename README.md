@@ -306,6 +306,12 @@ El código revisado pertenece a los equipos participantes:
 - Las carpetas `repos/` y `reports/` están en `.gitignore` y nunca deben subirse a este repositorio.
 - El dashboard corre solo en local; se comparte mediante reportes exportados (PDF, Markdown y ZIP).
 
+## Desarrollo con IA
+
+Este proyecto se desarrolló con código generado por IA a partir de especificaciones. Una persona escribe la especificación ([SPEC.md](SPEC.md)) y las prioridades ([MOSCOW.md](MOSCOW.md)); [Claude Code](https://claude.com/claude-code) (Anthropic) escribe el código y los tests de cada ítem del backlog y lo entrega como PR ([agente](docs/agente.md)), y Adán Ruiz revisa y mezcla cada PR. Los commits hechos con Claude Code lo indican con `Co-Authored-By`.
+
+Los reportes que genera el framework, incluida la revisión asistida con Claude Code, también son contenido generado con IA: son borradores que el revisor valida antes de entregarlos.
+
 ## Licencia
 
 [MIT](LICENSE)
