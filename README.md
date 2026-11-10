@@ -65,6 +65,7 @@ python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la rev
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
 python -m acr report [ID]            # reporte en inglés en reports/<id>/reporte.md y reports/judge-questions.md (PB-14, PB-59)
 python -m acr export [ID]            # reporte.md y reporte.pdf por equipo y reports/todos.zip (PB-23)
+python -m acr serve [--port 8000]    # API del orquestador sobre equipos.yml, solo en 127.0.0.1 (PB-24)
 python -m acr --config otro.yml ...  # usa otro archivo de entrada
 ```
 
@@ -212,6 +213,22 @@ Toda marca automática es un borrador que valida el revisor. `review.json` y `we
 - `reports/todos.zip`: `reporte.md` y `reporte.pdf` de **todos** los equipos de `equipos.yml` (aunque se pase un `ID`), `judge-questions.md` y los CSV de Dolos (`dolos/pairs.csv`, `dolos/file-pairs.csv`). No incluye SARIF, bitácoras ni otros archivos de `reports/`; lo que falte se avisa.
 
 Cada archivo se escribe aparte y reemplaza al anterior solo al terminar: si md-to-pdf falla o no está instalado, se conserva el PDF anterior, el Markdown y el ZIP se escriben igual y el comando sale con código 1.
+
+### API del orquestador
+
+`acr serve` levanta la API del orquestador (PB-24, [API del orquestador](SPEC.md#página-configuración-desde-el-dashboard)) en `http://127.0.0.1:8000`. Lee y escribe el mismo `equipos.yml` que se edita a mano:
+
+| Método y ruta | Acción |
+| --- | --- |
+| `GET /api/evento`, `PUT /api/evento` | Leer y guardar `nombre`, `inicio` y `fin` |
+| `GET /api/equipos` | Listar equipos |
+| `POST /api/equipos`, `PUT /api/equipos/{id}`, `DELETE /api/equipos/{id}` | Alta, edición y baja |
+
+- Cada cambio se valida con las mismas reglas de `acr validate` (incluidos `id` y PDF locales) antes de escribir; los errores vuelven con código 422 como `{"detail": [{"location", "message"}]}`. Solo se valida la parte editada, así que el archivo se puede llenar desde cero; `acr validate` sigue revisando el archivo completo.
+- Un `id` repetido da 409 y no se puede cambiar el `id` de un equipo (se da de baja y se crea otro). Los campos desconocidos se rechazan y los `null` se omiten.
+- Si `equipos.yml` no es YAML válido, la API responde 409 y nunca lo sobrescribe. Las escrituras son atómicas, pero **no conservan los comentarios** del archivo.
+- Solo `localhost`: escucha únicamente en `127.0.0.1` (no hay opción `--host`) y responde 403 a peticiones que no vengan de una dirección de loopback o cuyo `Host` u `Origin` no sea `localhost` (protege contra *DNS rebinding* y contra otras páginas abiertas en el navegador). No publica `/docs` ni `/openapi.json`.
+- La API nunca obtiene ni ejecuta el código de los equipos. Subir ZIP, validar origen y lanzar análisis llegan con PB-25 y PB-26.
 
 ### Dashboard local (servicios)
 
