@@ -936,7 +936,11 @@ def build_report(
     if fixable:
         key.append(f"{len(fixable)} critical/high CVE with a fix available (annex)")
     if review is not None:
-        key.append(f"assisted review ({md(review.get('status'))}): {md(review.get('summary', ''))}")
+        if review.get("tool") == "openrouter":
+            label = f"AI review by `{md(review.get('generated_by', '?'))}` via OpenRouter"
+        else:
+            label = "assisted review"
+        key.append(f"{label} ({md(review.get('status'))}): {md(review.get('summary', ''))}")
     unknown = sorted(
         {"scc.json", "megalinter.sarif", "git-signals.json", REVIEW_FILE}
         & (sources.missing | sources.unreadable | set(sources.invalid))

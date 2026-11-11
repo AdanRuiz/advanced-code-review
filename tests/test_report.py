@@ -303,6 +303,15 @@ def test_invalid_review_files_are_not_used(tmp_path):
     assert "| Manual review | Pending assisted review." in row(text, "2.1")
 
 
+def test_openrouter_review_names_the_model(tmp_path):
+    data = review_data()
+    data["tool"] = "openrouter"
+    data["generated_by"] = "deepseek/deepseek-v4.1-flash"
+    write_json(tmp_path / "equipo-01" / "review.json", data)
+    text = build_report(TEAM, EVENT, tmp_path, now=NOW)
+    assert "AI review by `deepseek/deepseek-v4.1-flash` via OpenRouter (draft):" in text
+
+
 def test_review_with_another_team_id_is_rejected(tmp_path):
     write_json(tmp_path / "equipo-01" / "review.json", review_data("equipo-02"))
     assert "review.json" in load_sources("equipo-01", tmp_path).invalid
