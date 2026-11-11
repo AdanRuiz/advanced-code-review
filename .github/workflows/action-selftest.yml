@@ -71,15 +71,17 @@ jobs:
           PASS: ${{ steps.review.outputs.pass }}
           FAIL: ${{ steps.review.outputs.fail }}
           MANUAL: ${{ steps.review.outputs.manual }}
+          ERRORS: ${{ steps.review.outputs.errors }}
         run: |
           set -euo pipefail
           test -f "$REPORT"
           test $((PASS + FAIL + MANUAL)) -eq 14
+          test "$ERRORS" = "0" || { echo "::error::$ERRORS step(s) failed; see the summary of Run the action"; exit 1; }
           grep -q "^## Official checklist" "$REPORT"
           test ! -e "$SAMPLE/reports"
           test ! -d "$RUNNER_TEMP/acr/repos/otro"
           # Every step must have produced its results (SCANOSS is off in this test).
-          for name in reporte.md scc.json git-signals.json megalinter.json megalinter.sarif; do
+          for name in reporte.md scc.json git-signals.json megalinter.json megalinter.sarif trivy.sarif; do
             test -f "$RUNNER_TEMP/acr/artifact/$name" || { echo "::error::missing $name"; exit 1; }
           done
           echo "Report OK: $PASS pass, $FAIL fail, $MANUAL manual review"

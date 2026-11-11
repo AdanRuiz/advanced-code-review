@@ -462,12 +462,18 @@ def test_open_permissions_lets_the_container_write(tmp_path):
     seen = {}
 
     def check(cmd, **kwargs):
+        if "--entrypoint" in cmd:
+            seen["release"] = cmd
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
         found = mounts(cmd)
         for target in (REPORTS_TARGET, megalinter.WORKSPACE):
             seen[target] = stat.S_IMODE(os.stat(found[target]["source"]).st_mode)
         return FakeMegaLinter()(cmd, **kwargs)
 
     run(tmp_path, check, open_permissions=True)
+    release = seen.pop("release")
+    assert release[release.index("--entrypoint") + 1] == "chmod"
+    assert "--network=none" in release and "--cap-drop=ALL" in release
     if os.name == "nt":
         pytest.skip("Windows does not keep POSIX modes")
     assert seen == {REPORTS_TARGET: 0o777, megalinter.WORKSPACE: 0o777}

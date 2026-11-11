@@ -575,7 +575,7 @@ jobs:
 | --- | --- |
 | Resumen de la ejecución (`GITHUB_STEP_SUMMARY`) | Tabla del checklist (*Pass / Fail / Manual review*) y hallazgos clave |
 | Artifact `acr-report` | `reporte.md`, JSON de resultados y SARIF de MegaLinter, Semgrep y Trivy sin fragmentos de código (`snippet`) y con lo que parezca credencial ocultado; sin las bitácoras de MegaLinter |
-| Outputs del paso | `report-path`, `pass`, `fail`, `manual` |
+| Outputs del paso | `report-path`, `pass`, `fail`, `manual` y `errors` (pasos que fallaron) |
 
 ### Revisión con IA vía OpenRouter (opcional)
 

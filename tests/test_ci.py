@@ -193,6 +193,7 @@ def test_full_run_writes_summary_outputs_and_artifact(tmp_path, workspace, tools
     assert "| 4.3 |" in text and "SCANOSS was turned off" in text and "Dolos was skipped" in text
     values = outputs(output)
     assert int(values["pass"]) + int(values["fail"]) + int(values["manual"]) == 14
+    assert values["errors"] == "0"
     artifact = Path(values["artifact-dir"])
     assert (artifact / "reporte.md").is_file()
     assert not (artifact / "megalinter").exists()
@@ -305,5 +306,6 @@ def test_a_failing_step_does_not_stop_the_others(tmp_path, workspace, tools, mon
     env, summary, output = env_for(tmp_path, workspace)
     assert main_ci(env, log=lambda *_: None) == 0
     assert "MegaLinter: failed (no se encontró docker)" in summary.read_text(encoding="utf-8")
+    assert outputs(output)["errors"] == "1"
     assert "scanoss" in tools["calls"]
     assert Path(outputs(output)["report-path"]).is_file()

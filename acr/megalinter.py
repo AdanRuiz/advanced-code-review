@@ -243,6 +243,17 @@ def _publish(source: Path, target: Path) -> None:
     staging.replace(target)
 
 
+def release_command(engine: str, image: str, workspace: Path, output: Path) -> list[str]:
+    """Same image, no network: the container's root, owner of what it wrote, makes it readable
+    and deletable by the host user (rootful Docker, ``open_permissions``)."""
+    return [
+        engine, "run", "--rm", *HARDENING_OPTIONS, "--network=none",
+        "--mount", _bind(workspace, WORKSPACE, read_only=False),
+        "--mount", _bind(output, REPORTS_TARGET, read_only=False),
+        "--entrypoint", "chmod", image, "-R", "a+rwX", WORKSPACE, REPORTS_TARGET,
+    ]
+
+
 def run_megalinter(
     team_id: str,
     repos_dir: Path = Path("repos"),
@@ -290,6 +301,11 @@ def run_megalinter(
             open_for_container(workspace)
             open_for_container(staging)
         returncode, last = _run_container(cmd, chosen, team_id, runner or subprocess.run, timeout)
+        if open_permissions:
+            (runner or subprocess.run)(
+                release_command(chosen, image, workspace, staging),
+                capture_output=True, text=True, timeout=600, check=False,
+            )
         try:
             _check_reports(staging)
         except MegaLinterError as exc:

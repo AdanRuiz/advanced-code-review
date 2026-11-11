@@ -13,11 +13,11 @@ teams with each other. Everything is written under ``--out`` (default ``$RUNNER_
 never in the workspace, so a report can never end up in a commit. The team's code is never
 executed.
 
-Outputs: the checklist table in ``$GITHUB_STEP_SUMMARY``, ``report-path``, ``artifact-dir``,
-``pass``, ``fail`` and ``manual`` in ``$GITHUB_OUTPUT``, and an artifact folder with the report,
-the JSON results and the SARIF files without code snippets. ``fail-on`` only looks at the
-deterministic marks (1.1, 1.2 and 4.3): an AI mark never fails the pipeline, because the
-reviewed code could steer it.
+Outputs: the checklist table in ``$GITHUB_STEP_SUMMARY``; ``report-path``, ``artifact-dir``,
+``pass``, ``fail``, ``manual`` and ``errors`` (steps that failed) in ``$GITHUB_OUTPUT``; and an
+artifact folder with the report, the JSON results and the SARIF files without code snippets.
+``fail-on`` only looks at the deterministic marks (1.1, 1.2 and 4.3): an AI mark never fails the
+pipeline, because the reviewed code could steer it.
 """
 
 from __future__ import annotations
@@ -334,6 +334,7 @@ def write_outputs(env: Mapping[str, str], result: CiResult) -> None:
         "pass": str(result.counts.get(PASS, 0)),
         "fail": str(result.counts.get(FAIL, 0)),
         "manual": str(result.counts.get(MANUAL, 0)),
+        "errors": str(sum(": failed (" in note for note in result.notes)),
     }
     _append(env.get("GITHUB_OUTPUT"), "".join(f"{key}={value}\n" for key, value in outputs.items()))
 
