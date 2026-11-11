@@ -416,7 +416,7 @@ def run_ci(opts: CiOptions, log=print) -> CiResult:
     def megalinter() -> str:
         run = run_megalinter(
             team_id, repos_dir, reports_dir, engine=opts.engine, image=opts.image,
-            timeout=opts.timeout_seconds, temp_dir=temp_dir,
+            timeout=opts.timeout_seconds, temp_dir=temp_dir, open_permissions=True,
         )
         if run.leftover is not None:
             log(f"MegaLinter: aviso: no se pudo borrar la copia temporal {run.leftover}")

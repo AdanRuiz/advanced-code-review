@@ -437,3 +437,37 @@ def test_cli_megalinter_unknown_team_and_bad_config(tmp_path, monkeypatch, fake_
     assert main(["--config", str(config), "megalinter", "otro"]) == EXIT_ERROR
     assert main(["--config", str(tmp_path / "nope.yml"), "megalinter"]) == EXIT_ERROR
     assert fake_engine.calls == []
+
+
+# --- rootful Docker (acr ci, PB-62) --------------------------------------------------------
+
+
+def test_missing_reports_show_megalinter_last_line_without_secrets(tmp_path):
+    make_repo(tmp_path)
+    secret = "ghp_" + "Q" * 36
+
+    def quiet(cmd, **kwargs):
+        return subprocess.CompletedProcess(cmd, 0, stdout=f"line 1\nPermission denied {secret}\n", stderr="")
+
+    with pytest.raises(MegaLinterError, match="Permission denied") as info:
+        run(tmp_path, quiet)
+    assert secret not in str(info.value) and "[REDACTED]" in str(info.value)
+
+
+def test_open_permissions_lets_the_container_write(tmp_path):
+    import os
+    import stat
+
+    make_repo(tmp_path)
+    seen = {}
+
+    def check(cmd, **kwargs):
+        found = mounts(cmd)
+        for target in (REPORTS_TARGET, megalinter.WORKSPACE):
+            seen[target] = stat.S_IMODE(os.stat(found[target]["source"]).st_mode)
+        return FakeMegaLinter()(cmd, **kwargs)
+
+    run(tmp_path, check, open_permissions=True)
+    if os.name == "nt":
+        pytest.skip("Windows does not keep POSIX modes")
+    assert seen == {REPORTS_TARGET: 0o777, megalinter.WORKSPACE: 0o777}

@@ -78,4 +78,8 @@ jobs:
           grep -q "^## Official checklist" "$REPORT"
           test ! -e "$SAMPLE/reports"
           test ! -d "$RUNNER_TEMP/acr/repos/otro"
+          # Every step must have produced its results (SCANOSS is off in this test).
+          for name in reporte.md scc.json git-signals.json megalinter.json megalinter.sarif; do
+            test -f "$RUNNER_TEMP/acr/artifact/$name" || { echo "::error::missing $name"; exit 1; }
+          done
           echo "Report OK: $PASS pass, $FAIL fail, $MANUAL manual review"
