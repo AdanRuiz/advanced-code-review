@@ -525,7 +525,7 @@ jobs:
   review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0          # historial completo: lo necesitan las señales de git
       - uses: AdanRuiz/advanced-code-review@v1
@@ -564,6 +564,8 @@ jobs:
 | `scanoss` | `true` | Activa SCANOSS |
 | `fail-on` | `none` | `none`: solo informa · `secrets`: falla si el punto 4.3 no cumple · `fail`: falla si algún punto no cumple |
 | `retention-days` | `7` | Días que GitHub guarda el artifact |
+| `artifact-name` | `acr-report` | Nombre del artifact (útil con una matriz de jobs) |
+| `path` | El workspace | Carpeta del repositorio a validar, con su `.git` |
 | `ai-review` | `false` | Activa la revisión con IA; el workflow tiene que pedirla de forma explícita |
 | `openrouter-api-key` | Vacío | Key de OpenRouter, siempre desde un secreto del repositorio (`${{ secrets.OPENROUTER_API_KEY }}`); por sí sola no activa nada |
 | `ai-model` | `deepseek/deepseek-v4.1-flash` | Modelo de OpenRouter para la revisión con IA |
@@ -572,7 +574,7 @@ jobs:
 | Salida | Contenido |
 | --- | --- |
 | Resumen de la ejecución (`GITHUB_STEP_SUMMARY`) | Tabla del checklist (*Pass / Fail / Manual review*) y hallazgos clave |
-| Artifact `acr-report` | `reporte.md`, JSON de resultados y SARIF/Markdown de MegaLinter |
+| Artifact `acr-report` | `reporte.md`, JSON de resultados y SARIF de MegaLinter, Semgrep y Trivy sin fragmentos de código (`snippet`) y con lo que parezca credencial ocultado; sin las bitácoras de MegaLinter |
 | Outputs del paso | `report-path`, `pass`, `fail`, `manual` |
 
 ### Revisión con IA vía OpenRouter (opcional)

@@ -63,6 +63,8 @@ python -m acr security               # datos de la página Seguridad en reports/
 python -m acr plagiarism             # datos de la página Plagio en reports/plagiarism.json (PB-22)
 python -m acr review-prompt ID [-o ARCHIVO]  # prompt de Claude Code para la revisión asistida (PB-13)
 python -m acr review-validate [ID]   # valida review.json y web-plagiarism.json (PB-13)
+python -m acr ai-review [ID]         # revisión con IA vía OpenRouter; solo con ACR_AI_REVIEW=true (PB-63)
+python -m acr ci                     # modo GitHub Action: solo el repo del workspace, sin equipos.yml (PB-62)
 python -m acr report [ID]            # reporte en inglés en reports/<id>/reporte.md y reports/judge-questions.md (PB-14, PB-59)
 python -m acr export [ID]            # reporte.md y reporte.pdf por equipo y reports/todos.zip (PB-23)
 python -m acr serve [--port 8000]    # API del orquestador sobre equipos.yml, solo en 127.0.0.1 (PB-24)
@@ -300,7 +302,7 @@ Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
 ## Usar desde GitHub Actions
 
-> **Planeado (fase 6, PB-61 a PB-68):** la acción todavía no existe. Esta sección describe cómo se integrará; diseño completo en [SPEC.md](SPEC.md#github-action-para-otros-repositorios).
+> **En construcción (fase 6):** la acción está en `action.yml` y se prueba con [action-selftest.yml](.github/workflows/action-selftest.yml). Falta aprobar las versiones fijadas (PB-61) y publicar el tag `v1` (PB-68); hasta entonces usa `AdanRuiz/advanced-code-review@<commit>`. Diseño completo en [SPEC.md](SPEC.md#github-action-para-otros-repositorios).
 
 Cualquier persona puede validar **su propio repositorio** con el mismo análisis estático, desde su propio pipeline. El análisis corre en el runner de ese repositorio y el reporte queda ahí: este proyecto no recibe código ni reportes. El uso local con `equipos.yml` descrito arriba sigue igual. La acción **nunca** lee `equipos.yml`: si tu repositorio trae uno, se ignora y solo se analiza tu repositorio.
 
@@ -316,7 +318,7 @@ Cualquier persona puede validar **su propio repositorio** con el mismo análisis
      review:
        runs-on: ubuntu-latest          # solo Linux: MegaLinter necesita Docker
        steps:
-         - uses: actions/checkout@v5
+         - uses: actions/checkout@v7
            with:
              fetch-depth: 0            # historial completo para las señales de git
          - uses: AdanRuiz/advanced-code-review@v1
@@ -334,7 +336,7 @@ Cualquier persona puede validar **su propio repositorio** con el mismo análisis
 3. Abre un *pull request* o lánzalo desde la pestaña **Actions** (*Run workflow*).
 4. Consulta el resultado:
    - **Resumen de la ejecución:** tabla del checklist (*Pass / Fail / Manual review*), hallazgos clave y, si hubo revisión con IA, tokens y costo.
-   - **Artifact `acr-report`:** `reporte.md`, JSON de resultados y reportes de MegaLinter (se guarda 7 días; cámbialo con `retention-days`).
+   - **Artifact `acr-report`:** `reporte.md`, JSON de resultados y SARIF de MegaLinter, Semgrep y Trivy sin fragmentos de código (se guarda 7 días; cámbialo con `retention-days`).
 
 | Entrada | Por defecto | Qué hace |
 | --- | --- | --- |
@@ -348,6 +350,8 @@ Cualquier persona puede validar **su propio repositorio** con el mismo análisis
 | `ai-max-input-chars` | `200000` | Tope de texto enviado al modelo, para limitar el costo |
 | `fail-on` | `none` | `secrets` falla si hay secretos; `fail` falla si un punto no cumple (las marcas de IA nunca hacen fallar) |
 | `retention-days` | `7` | Días que se guarda el artifact |
+| `artifact-name` | `acr-report` | Nombre del artifact |
+| `path` | El workspace | Carpeta del repositorio a validar |
 
 Tenlo en cuenta:
 
