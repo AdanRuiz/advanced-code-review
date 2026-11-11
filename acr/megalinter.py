@@ -77,6 +77,8 @@ class MegaLinterResult:
     returncode: int
     files: list[Path] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    # Temporary copy that could not be deleted (e.g. files the container wrote as root).
+    leftover: Path | None = None
 
 
 def find_engine(preferred: str | None = None, which: Which = shutil.which) -> str:
@@ -151,12 +153,24 @@ def writable_copy(repo: Path, parent: Path | None = None, team_id: str = "repo")
     return workspace
 
 
+def redact_line(text: str) -> str:
+    """A line of MegaLinter's output, without anything that looks like a credential."""
+    from acr.review import SECRET_PATTERNS
+
+    for _kind, pattern in SECRET_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text[:300]
+
+
 def _last_line(text: str | None) -> str | None:
     lines = [line for line in (text or "").strip().splitlines() if line.strip()]
     return lines[-1].strip() if lines else None
 
 
-def _run_container(cmd: list[str], engine: str, team_id: str, runner: Runner, timeout: int) -> int:
+def _run_container(
+    cmd: list[str], engine: str, team_id: str, runner: Runner, timeout: int
+) -> tuple[int, str | None]:
+    """Exit code and the last line MegaLinter printed (to explain missing reports)."""
     try:
         result = runner(
             cmd, capture_output=True, text=True, encoding="utf-8", errors="replace",
@@ -178,7 +192,23 @@ def _run_container(cmd: list[str], engine: str, team_id: str, runner: Runner, ti
         # MegaLinter exits 1 when a linter found errors; anything else is a failed run.
         detail = _last_line(result.stderr) or _last_line(result.stdout) or f"código {result.returncode}"
         raise MegaLinterError(f"MegaLinter falló: {detail}")
-    return result.returncode
+    return result.returncode, _last_line(result.stdout) or _last_line(result.stderr)
+
+
+def open_for_container(root: Path) -> None:
+    """Let the container's root write in ``root`` without CAP_DAC_OVERRIDE (dropped by PB-40).
+
+    With Docker in rootful mode (GitHub runners) root in the container is not the owner of the
+    host folders, and ``--cap-drop=ALL`` removes its right to ignore permissions. Rootless
+    Podman maps root to the user, so the local flow does not need it.
+    """
+    for dirpath, dirnames, filenames in os.walk(root):
+        os.chmod(dirpath, 0o777)
+        for name in filenames:
+            path = os.path.join(dirpath, name)
+            if not os.path.islink(path):
+                os.chmod(path, 0o666)
+        dirnames[:] = [d for d in dirnames if not os.path.islink(os.path.join(dirpath, d))]
 
 
 def _check_reports(output: Path) -> None:
@@ -213,6 +243,17 @@ def _publish(source: Path, target: Path) -> None:
     staging.replace(target)
 
 
+def release_command(engine: str, image: str, workspace: Path, output: Path) -> list[str]:
+    """Same image, no network: the container's root, owner of what it wrote, makes it readable
+    and deletable by the host user (rootful Docker, ``open_permissions``)."""
+    return [
+        engine, "run", "--rm", *HARDENING_OPTIONS, "--network=none",
+        "--mount", _bind(workspace, WORKSPACE, read_only=False),
+        "--mount", _bind(output, REPORTS_TARGET, read_only=False),
+        "--entrypoint", "chmod", image, "-R", "a+rwX", WORKSPACE, REPORTS_TARGET,
+    ]
+
+
 def run_megalinter(
     team_id: str,
     repos_dir: Path = Path("repos"),
@@ -225,10 +266,13 @@ def run_megalinter(
     runner: Runner | None = None,
     which: Which = shutil.which,
     temp_dir: Path | None = None,
+    open_permissions: bool = False,
 ) -> MegaLinterResult:
     """Run MegaLinter on a disposable copy of ``repos_dir/<id>``; reports go to ``reports_dir/<id>/``.
 
     ``temp_dir`` is where the copy is made (default: the system temp folder).
+    ``open_permissions`` (``acr ci``) opens the copy and the output folder to the container's
+    root; see ``open_for_container``.
     """
     if not is_valid_team_id(team_id):
         raise MegaLinterError(f"id inválido ({team_id!r})")
@@ -245,6 +289,7 @@ def run_megalinter(
     remove_tree(staging)
     staging.mkdir()
     workspace = None
+    leftover = None
     try:
         try:
             workspace = writable_copy(repo, temp_dir, team_id)
@@ -252,8 +297,21 @@ def run_megalinter(
             message = f"no se pudo copiar {repo.as_posix()} a la carpeta temporal: {exc}"
             raise MegaLinterError(message) from exc
         cmd = build_command(chosen, image, team_id, workspace, staging, config_file)
-        returncode = _run_container(cmd, chosen, team_id, runner or subprocess.run, timeout)
-        _check_reports(staging)
+        if open_permissions:
+            open_for_container(workspace)
+            open_for_container(staging)
+        returncode, last = _run_container(cmd, chosen, team_id, runner or subprocess.run, timeout)
+        if open_permissions:
+            (runner or subprocess.run)(
+                release_command(chosen, image, workspace, staging),
+                capture_output=True, text=True, timeout=600, check=False,
+            )
+        try:
+            _check_reports(staging)
+        except MegaLinterError as exc:
+            if last:
+                raise MegaLinterError(f"{exc}; última línea de MegaLinter: {redact_line(last)}") from None
+            raise
         sarif = _linter_sarif(staging)
 
         raw = out_dir / RAW_DIR
@@ -262,7 +320,11 @@ def run_megalinter(
     finally:
         remove_tree(staging)
         if workspace is not None:
-            remove_tree(workspace.parent)
+            try:
+                remove_tree(workspace.parent)
+            except OSError:
+                # Docker without rootless mode leaves root-owned files; the reports are kept anyway.
+                leftover = workspace.parent
 
     files = []
     for name in MAIN_REPORTS:
@@ -277,4 +339,4 @@ def run_megalinter(
         else:
             target.unlink(missing_ok=True)  # never keep a stale result from a previous run
             missing.append(name)
-    return MegaLinterResult(returncode=returncode, files=files, missing=missing)
+    return MegaLinterResult(returncode=returncode, files=files, missing=missing, leftover=leftover)

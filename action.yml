@@ -1,0 +1,153 @@
+# Advanced Code Review as a GitHub Action (PB-64; SPEC.md "GitHub Action para otros repositorios").
+#
+# Validates only the repository of the workflow that uses it: never reads equipos.yml and never
+# executes the repository's code. Pinned versions: PB-61 (reviewed by a person).
+name: Advanced Code Review
+description: Static code review of this repository against a hackathon checklist (git, scc, MegaLinter, SCANOSS, optional AI review).
+author: AdanRuiz
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  path:
+    description: Folder of the repository to validate (with its .git; check out with fetch-depth 0).
+    default: ${{ github.workspace }}
+  event-name:
+    description: Title of the report. Default, the repository name.
+    default: ""
+  project:
+    description: Project name in the report. Default, the repository name.
+    default: ""
+  objective:
+    description: Problem the project solves and for whom.
+    default: ""
+  event-start:
+    description: Sprint start, ISO 8601 with time zone (e.g. 2026-10-24T16:30:00-06:00). Optional, with event-end.
+    default: ""
+  event-end:
+    description: Sprint end, ISO 8601 with time zone. Optional, with event-start.
+    default: ""
+  members:
+    description: "One line per team member: 'github-user: Name' (item 1.2). Optional."
+    default: ""
+  scanoss:
+    description: Look for known open source code with SCANOSS (sends only fingerprints).
+    default: "true"
+  fail-on:
+    description: "none: only report · secrets: fail if item 4.3 fails · fail: fail if 1.1, 1.2 or 4.3 fails. AI marks never fail."
+    default: none
+  retention-days:
+    description: Days GitHub keeps the artifact.
+    default: "7"
+  artifact-name:
+    description: Name of the artifact with the report.
+    default: acr-report
+  ai-review:
+    description: Turn on the AI review through OpenRouter (sends part of the code to OpenRouter). Off by default.
+    default: "false"
+  openrouter-api-key:
+    description: OpenRouter key, always from a secret (secrets.OPENROUTER_API_KEY). It does not turn anything on by itself.
+    default: ""
+  ai-model:
+    description: OpenRouter model for the AI review.
+    default: deepseek/deepseek-v4.1-flash-1017
+  ai-max-input-chars:
+    description: Maximum characters of the repository sent to the model (limits the cost).
+    default: "200000"
+
+outputs:
+  report-path:
+    description: Path of reporte.md on the runner.
+    value: ${{ steps.acr.outputs.report-path }}
+  pass:
+    description: Checklist items marked Pass.
+    value: ${{ steps.acr.outputs.pass }}
+  fail:
+    description: Checklist items marked Fail.
+    value: ${{ steps.acr.outputs.fail }}
+  manual:
+    description: Checklist items marked Manual review.
+    value: ${{ steps.acr.outputs.manual }}
+  errors:
+    description: Steps that failed (MegaLinter, SCANOSS, AI review...); see the run summary.
+    value: ${{ steps.acr.outputs.errors }}
+
+runs:
+  using: composite
+  steps:
+    - name: Check the runner
+      if: runner.os != 'Linux'
+      shell: bash
+      run: |
+        echo "::error::Advanced Code Review only runs on Linux runners (MegaLinter needs Docker); use runs-on: ubuntu-latest"
+        exit 1
+
+    - name: Set up Python
+      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+      with:
+        python-version: "3.12"
+
+    - name: Install acr, scc and scanoss-py
+      shell: bash
+      working-directory: ${{ github.action_path }}
+      env:
+        SCC_VERSION: v4.1.0
+        SCC_SHA256_X64: c7328436d3027f4357d3d7853f7dc3ac2bbcb4ca08f1adad91a27c593884079b
+        SCC_SHA256_ARM64: 6e0d2a1f8d3540ba7df185477dec40bb7340f1b214bfd303147de5cad2bd7b8b
+        SCANOSS_VERSION: 1.54.3
+        RUNNER_ARCH_NAME: ${{ runner.arch }}
+      run: |
+        set -euo pipefail
+        case "$RUNNER_ARCH_NAME" in
+          X64) asset=scc_Linux_x86_64.tar.gz; sha="$SCC_SHA256_X64" ;;
+          ARM64) asset=scc_Linux_arm64.tar.gz; sha="$SCC_SHA256_ARM64" ;;
+          *) echo "::error::Unsupported runner architecture: $RUNNER_ARCH_NAME"; exit 1 ;;
+        esac
+        venv="$RUNNER_TEMP/acr-venv"
+        bin="$RUNNER_TEMP/acr-bin"
+        python -m venv "$venv"
+        "$venv/bin/python" -m pip install --quiet --disable-pip-version-check -r requirements-dev.txt
+        "$venv/bin/python" -m pip install --quiet --disable-pip-version-check "scanoss==$SCANOSS_VERSION"
+        mkdir -p "$bin/scc-dist"
+        curl -fsSL --retry 3 -o "$RUNNER_TEMP/scc.tar.gz" \
+          "https://github.com/boyter/scc/releases/download/$SCC_VERSION/$asset"
+        echo "$sha  $RUNNER_TEMP/scc.tar.gz" | sha256sum --check --strict
+        tar -xzf "$RUNNER_TEMP/scc.tar.gz" -C "$bin/scc-dist"
+        install -m 0755 "$bin/scc-dist/scc" "$bin/scc"
+        echo "$bin" >> "$GITHUB_PATH"
+        echo "$venv/bin" >> "$GITHUB_PATH"
+
+    - name: Run Advanced Code Review
+      id: acr
+      shell: bash
+      # Never from the validated repository: Python must not import a file from it.
+      working-directory: ${{ github.action_path }}
+      env:
+        PYTHONPATH: ${{ github.action_path }}
+        ACR_PATH: ${{ inputs.path }}
+        ACR_EVENT_NAME: ${{ inputs.event-name }}
+        ACR_PROJECT: ${{ inputs.project }}
+        ACR_OBJECTIVE: ${{ inputs.objective }}
+        ACR_EVENT_START: ${{ inputs.event-start }}
+        ACR_EVENT_END: ${{ inputs.event-end }}
+        ACR_MEMBERS: ${{ inputs.members }}
+        ACR_SCANOSS: ${{ inputs.scanoss }}
+        ACR_FAIL_ON: ${{ inputs.fail-on }}
+        ACR_ENGINE: docker
+        ACR_AI_REVIEW: ${{ inputs.ai-review }}
+        OPENROUTER_API_KEY: ${{ inputs.openrouter-api-key }}
+        ACR_AI_MODEL: ${{ inputs.ai-model }}
+        ACR_AI_MAX_INPUT_CHARS: ${{ inputs.ai-max-input-chars }}
+      run: |
+        if [ -n "$OPENROUTER_API_KEY" ]; then echo "::add-mask::$OPENROUTER_API_KEY"; fi
+        python -P -m acr ci
+
+    - name: Upload the report
+      if: always() && steps.acr.outputs.artifact-dir != ''
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: ${{ inputs.artifact-name }}
+        path: ${{ steps.acr.outputs.artifact-dir }}
+        retention-days: ${{ inputs.retention-days }}
+        if-no-files-found: warn

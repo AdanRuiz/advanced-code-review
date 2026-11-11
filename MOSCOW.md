@@ -26,6 +26,7 @@ Las columnas Must, Should y Could cuentan ítems del agente; Humano, los que hac
 | 3 | Dashboard Grafana local y orquestador | — | 8 | 4 | — |
 | 4 | Interfaz Next.js con JSON | — | — | 7 | 1 |
 | 5 | Publicación (Vercel) | — | — | 3 | 1 |
+| 6 | GitHub Action para otros repositorios | — | 5 | 1 | 2 |
 
 ## Fase 0 — Preparación (humano)
 
@@ -109,6 +110,23 @@ Después del primer evento.
 | PB-37 | Could | Subida de resultados a almacenamiento privado | Camino a Vercel | Solo JSON de resultados, nunca código; script de subida con tests |
 | PB-38 | Could | Login para la app publicada | Camino a Vercel | Sin acceso anónimo; cuentas de jueces y organizadores |
 | PB-39 | Could | Despliegue en Vercel | Camino a Vercel | App publicada con datos de prueba, sin código de equipos |
+
+## Fase 6 — GitHub Action para otros repositorios (Should)
+
+Cualquier persona valida su propio repositorio desde su pipeline, con el mismo análisis estático (ver [GitHub Action para otros repositorios](SPEC.md#github-action-para-otros-repositorios)). No depende de las fases 3 a 5.
+
+El flujo local con `equipos.yml` no cambia: cada ítem mantiene en verde los tests existentes. La acción nunca lee `equipos.yml`.
+
+| ID | Prioridad | Ítem | Requisitos | Aceptación |
+| --- | --- | --- | --- | --- |
+| PB-61 | Should · humano | Aprobar dependencias de la acción y el modelo por defecto | GitHub Action: Reglas; Revisión con IA vía OpenRouter | Versiones fijas de scc (binario con SHA-256), scanoss-py, `actions/setup-python` y `actions/upload-artifact` (por SHA), revisadas por una persona; identificador y precio de `deepseek/deepseek-v4.1-flash-1017` confirmados en openrouter.ai |
+| PB-62 | Should | Comando `acr ci` | GitHub Action: Qué corre, Entradas y salidas, Reglas | Un solo repositorio desde el workspace, configuración en memoria desde entradas, sin `--config`; test con un `equipos.yml` en el workspace que lista otros repositorios: no se lee, no se clona nada y el resumen lo avisa; `id` saneado, `fork` desde `GITHUB_EVENT_PATH`, aviso si el clon es superficial, ventana del sprint opcional, salidas solo en `RUNNER_TEMP`; corre git-signals, scc, MegaLinter, SCANOSS, revisión con IA (si está activada) y reporte; omite Dolos; tests sin red ni herramientas |
+| PB-63 | Should | Revisión con IA vía OpenRouter | Revisión con IA vía OpenRouter; Revisión asistida con Claude Code | `acr ai-review [ID]` apagada salvo `ACR_AI_REVIEW=true` (tener la key no basta), con `OPENROUTER_API_KEY` y `ACR_AI_MODEL`; activada sin key se omite con aviso; funciona con `equipos.yml` en local y desde `acr ci`; excluye archivos con secretos y tipo `.env`; tope de caracteres; `data_collection: "deny"`; salida validada con un reintento; `generated_by` en `review.json`; tokens y costo reportados; la key nunca en la salida; tests con `httpx` simulado, sin red |
+| PB-64 | Should | `action.yml` compuesta | GitHub Action: Entradas y salidas, Reglas | Entradas y outputs de la spec (incluidas `ai-review` con `false` por defecto, `openrouter-api-key`, `ai-model` y `ai-max-input-chars`); solo invoca `acr ci`; instala herramientas con versiones de PB-61; sube el artifact `acr-report` con `retention-days`; falla claro fuera de Linux; solo `contents: read`; depende de PB-61 a PB-63 |
+| PB-65 | Should | Resumen de la ejecución y política de fallo | GitHub Action: Entradas y salidas, Reglas; Entorno, seguridad y privacidad | Tabla del checklist en `GITHUB_STEP_SUMMARY`; `fail-on` (`none`, `secrets`, `fail`) solo con marcas deterministas; outputs `pass`, `fail`, `manual`; test que comprueba que ni secretos ni la key aparecen en el resumen ni en el log |
+| PB-66 | Should | Prueba de la acción y documentación | GitHub Action | Workflow de este repositorio que corre la acción sobre un repositorio de prueba (sin código de equipos); la sección "Usar desde GitHub Actions" del README queda al día con lo construido |
+| PB-67 | Could | Subir SARIF a *code scanning* | GitHub Action | Entrada opcional `sarif-upload` (apagada por defecto, requiere `security-events: write`); documentada |
+| PB-68 | Could · humano | Publicar la versión | GitHub Action: Reglas | Tags `v1.0.0` y `v1`, notas de la versión; decisión escrita sobre publicarla en GitHub Marketplace |
 
 ## Won't (esta versión)
 

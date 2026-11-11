@@ -1,0 +1,87 @@
+# PB-66: runs the action of this repository on a small sample repository built here
+# (no team code), and checks its outputs. The AI review stays off: no key, no cost.
+name: Action self-test
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - action.yml
+      - acr/**
+      - .mega-linter.yml
+      - requirements-dev.txt
+      - .github/workflows/action-selftest.yml
+
+permissions:
+  contents: read
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Check out the action
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: action
+          persist-credentials: false
+
+      - name: Build a sample repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          sample="$RUNNER_TEMP/sample"
+          mkdir -p "$sample" && cd "$sample"
+          git init -q -b main
+          printf '# Sample\n\nA tiny reading tutor.\n\n## Install\n\npip install -r requirements.txt\n' > README.md
+          printf 'flask==3.1.0\n' > requirements.txt
+          GIT_AUTHOR_DATE=2026-10-25T10:00:00-06:00 GIT_COMMITTER_DATE=2026-10-25T10:00:00-06:00 \
+            git -c user.name=ana-sample -c user.email=ana-sample@users.noreply.github.com add . && \
+            GIT_AUTHOR_DATE=2026-10-25T10:00:00-06:00 GIT_COMMITTER_DATE=2026-10-25T10:00:00-06:00 \
+            git -c user.name=ana-sample -c user.email=ana-sample@users.noreply.github.com commit -q -m "Add README"
+          printf 'def greet(name):\n    return f"Hello {name}"\n' > app.py
+          GIT_AUTHOR_DATE=2026-10-30T10:00:00-06:00 GIT_COMMITTER_DATE=2026-10-30T10:00:00-06:00 \
+            git -c user.name=beto-sample -c user.email=beto-sample@users.noreply.github.com add . && \
+            GIT_AUTHOR_DATE=2026-10-30T10:00:00-06:00 GIT_COMMITTER_DATE=2026-10-30T10:00:00-06:00 \
+            git -c user.name=beto-sample -c user.email=beto-sample@users.noreply.github.com commit -q -m "Add greet"
+          # The action must ignore this file and never clone what it lists.
+          printf 'evento: {nombre: X}\nequipos:\n  - {id: otro, repo: https://github.com/example/other}\n' > equipos.yml
+          echo "SAMPLE=$sample" >> "$GITHUB_ENV"
+
+      - name: Run the action
+        id: review
+        uses: ./action
+        with:
+          path: ${{ env.SAMPLE }}
+          event-name: Self-test
+          event-start: 2026-10-24T16:30:00-06:00
+          event-end: 2026-11-05T23:59:00-06:00
+          members: |
+            ana-sample: Ana
+            beto-sample: Beto
+          scanoss: "false"
+          fail-on: none
+          retention-days: "1"
+          artifact-name: acr-selftest
+
+      - name: Check the outputs
+        shell: bash
+        env:
+          REPORT: ${{ steps.review.outputs.report-path }}
+          PASS: ${{ steps.review.outputs.pass }}
+          FAIL: ${{ steps.review.outputs.fail }}
+          MANUAL: ${{ steps.review.outputs.manual }}
+          ERRORS: ${{ steps.review.outputs.errors }}
+        run: |
+          set -euo pipefail
+          test -f "$REPORT"
+          test $((PASS + FAIL + MANUAL)) -eq 14
+          test "$ERRORS" = "0" || { echo "::error::$ERRORS step(s) failed; see the summary of Run the action"; exit 1; }
+          grep -q "^## Official checklist" "$REPORT"
+          test ! -e "$SAMPLE/reports"
+          test ! -d "$RUNNER_TEMP/acr/repos/otro"
+          # Every step must have produced its results (SCANOSS is off in this test).
+          for name in reporte.md scc.json git-signals.json megalinter.json megalinter.sarif trivy.sarif; do
+            test -f "$RUNNER_TEMP/acr/artifact/$name" || { echo "::error::missing $name"; exit 1; }
+          done
+          echo "Report OK: $PASS pass, $FAIL fail, $MANUAL manual review"
