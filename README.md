@@ -298,6 +298,64 @@ Calidad y Calificación aún no tienen paneles (llegan con PB-18 a PB-20), y el 
 
 Desarrollo: `python -m ruff check .` y `python -m pytest -q`.
 
+## Usar desde GitHub Actions
+
+> **Planeado (fase 6, PB-61 a PB-68):** la acción todavía no existe. Esta sección describe cómo se integrará; diseño completo en [SPEC.md](SPEC.md#github-action-para-otros-repositorios).
+
+Cualquier persona puede validar **su propio repositorio** con el mismo análisis estático, desde su propio pipeline. El análisis corre en el runner de ese repositorio y el reporte queda ahí: este proyecto no recibe código ni reportes. El uso local con `equipos.yml` descrito arriba sigue igual. La acción **nunca** lee `equipos.yml`: si tu repositorio trae uno, se ignora y solo se analiza tu repositorio.
+
+1. *(Opcional, para la revisión con IA)* En el repositorio que quieres validar, ve a **Settings → Secrets and variables → Actions** y crea el secreto `OPENROUTER_API_KEY` con tu key de [OpenRouter](https://openrouter.ai/). La revisión con IA está **apagada por defecto**: además de la key, el workflow tiene que pedirla con `ai-review: true`. Apagada, los puntos que requieren IA quedan en *Manual review*.
+2. Crea `.github/workflows/code-review.yml`:
+
+   ```yaml
+   name: Code review
+   on: [pull_request, workflow_dispatch]
+   permissions:
+     contents: read
+   jobs:
+     review:
+       runs-on: ubuntu-latest          # solo Linux: MegaLinter necesita Docker
+       steps:
+         - uses: actions/checkout@v5
+           with:
+             fetch-depth: 0            # historial completo para las señales de git
+         - uses: AdanRuiz/advanced-code-review@v1
+           with:
+             event-start: 2026-10-24T16:30:00-06:00   # opcional: inicio del sprint
+             event-end: 2026-11-05T23:59:00-06:00     # opcional: cierre del sprint
+             members: |                              # opcional: usuario-github: Nombre
+               analopez: Ana López
+             ai-review: true                                        # opcional: false por defecto
+             openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}  # requerida si ai-review es true
+             ai-model: deepseek/deepseek-v4.1-flash                   # opcional
+             fail-on: none             # none | secrets | fail
+   ```
+
+3. Abre un *pull request* o lánzalo desde la pestaña **Actions** (*Run workflow*).
+4. Consulta el resultado:
+   - **Resumen de la ejecución:** tabla del checklist (*Pass / Fail / Manual review*), hallazgos clave y, si hubo revisión con IA, tokens y costo.
+   - **Artifact `acr-report`:** `reporte.md`, JSON de resultados y reportes de MegaLinter (se guarda 7 días; cámbialo con `retention-days`).
+
+| Entrada | Por defecto | Qué hace |
+| --- | --- | --- |
+| `event-name`, `project`, `objective` | Nombre del repo / vacíos | Títulos del reporte |
+| `event-start`, `event-end` | Sin ventana | Detecta commits fuera del sprint |
+| `members` | Vacío | Compara autores de los commits con los integrantes (punto 1.2) |
+| `scanoss` | `true` | Busca coincidencias con código open source (solo envía huellas) |
+| `ai-review` | `false` | Activa la revisión con IA de forma explícita |
+| `openrouter-api-key` | Vacío | Key para la revisión con IA; pásala siempre desde un secreto. Por sí sola no activa nada |
+| `ai-model` | `deepseek/deepseek-v4.1-flash` | Cualquier modelo de OpenRouter |
+| `ai-max-input-chars` | `200000` | Tope de texto enviado al modelo, para limitar el costo |
+| `fail-on` | `none` | `secrets` falla si hay secretos; `fail` falla si un punto no cumple (las marcas de IA nunca hacen fallar) |
+| `retention-days` | `7` | Días que se guarda el artifact |
+
+Tenlo en cuenta:
+
+- **No ejecuta tu código:** no instala dependencias ni compila.
+- **Con `ai-review: true`, parte de tu código se envía a OpenRouter** y al proveedor del modelo. Nunca se envían los archivos donde se encontró un secreto ni los tipo `.env`, y se piden proveedores que no guardan datos. En *pull requests* desde forks GitHub no entrega el secreto, así que ese paso se omite.
+- **Repositorios públicos:** cualquier usuario de GitHub puede ver el log y descargar los artifacts. Los secretos encontrados se muestran solo con tipo, archivo y línea, nunca su valor.
+- **Todo es un borrador:** las marcas automáticas, y sobre todo las de la IA, hay que revisarlas.
+
 ## Privacidad
 
 El código revisado pertenece a los equipos participantes:

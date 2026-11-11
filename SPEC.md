@@ -2,7 +2,7 @@
 
 Framework de revisión estática de repositorios para hackathons y concursos de programación.
 
-Versión: 2026-11-06
+Versión: 2026-11-11
 
 ## Propósito y alcance
 
@@ -97,7 +97,7 @@ Cada repositorio se clona una vez en solo lectura y cada herramienta lo lee una 
 | Servicio local (`localhost`) | Grafana (con plugin Infinity), Loki, Prometheus, servidor de archivos de `reports/`, orquestador (API + página Configuración) |
 | Asistente | Claude Code |
 
-Todo corre en el equipo del revisor; nada se publica en la web.
+Todo corre en el equipo del revisor; nada se publica en la web. La única variante es la [GitHub Action](#github-action-para-otros-repositorios): el dueño de un repositorio la agrega a su propio pipeline, sobre su propio código, que ya está en GitHub.
 
 ## Entrada
 
@@ -501,6 +501,107 @@ Jueces y organizadores reciben un reporte por equipo **en inglés** (idioma ofic
 
 Además del reporte por equipo, el ZIP incluye `judge-questions.md` con las preguntas de todos los equipos.
 
+## GitHub Action para otros repositorios
+
+Cualquier persona puede validar **su propio repositorio** con el mismo análisis estático, agregando la acción a un workflow de su repositorio. La acción corre en el runner de ese repositorio y deja el reporte ahí; este proyecto no recibe código ni reportes.
+
+**Dos modos separados:**
+
+| | Local (evento) | GitHub Action |
+| --- | --- | --- |
+| Entrada | `equipos.yml`, como hasta ahora | Entradas de la acción; **nunca** `equipos.yml` |
+| Repositorios | Los de todos los equipos | Solo el del workspace, el del dueño del pipeline |
+| Comandos | `acr validate`, `fetch`, `analyze`, etc. | Solo `acr ci` |
+
+El flujo local no cambia: `equipos.yml`, `acr analyze`, Dolos, la revisión con Claude Code y el reporte del evento siguen igual, y ningún paso pasa a depender de GitHub. La acción reutiliza los mismos pasos con un solo equipo armado en memoria. `acr ci` no tiene opción `--config`: si el workspace trae un `equipos.yml`, lo ignora (no lo lee ni clona lo que liste) y lo avisa en el resumen. Así una acción integrada en otro repositorio nunca obtiene ni analiza código de terceros.
+
+```yaml
+# .github/workflows/code-review.yml en el repositorio que se quiere validar
+name: Code review
+on: [pull_request, workflow_dispatch]
+permissions:
+  contents: read
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0          # historial completo: lo necesitan las señales de git
+      - uses: AdanRuiz/advanced-code-review@v1
+        with:
+          event-start: 2026-10-24T16:30:00-06:00   # opcional
+          event-end: 2026-11-05T23:59:00-06:00     # opcional
+          members: |                              # opcional: punto 1.2
+            analopez: Ana López
+          ai-review: true                                        # opcional: apagada por defecto
+          openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}  # requerida si ai-review es true
+          ai-model: deepseek/deepseek-v4.1-flash                   # opcional
+```
+
+### Qué corre
+
+| Paso | En la acción | Motivo |
+| --- | --- | --- |
+| Obtener | Copia del workspace a una carpeta temporal en solo lectura (como una carpeta local en [Entrada](#entrada)) | Mismo invariante de solo lectura |
+| Señales de git | Sí | Puntos 1.1 y 1.2; `fork` se lee del evento de GitHub (`GITHUB_EVENT_PATH`), sin llamar a la API |
+| scc | Sí | Contexto del reporte |
+| MegaLinter | Sí, con el mismo `.mega-linter.yml` de este proyecto y el mismo endurecimiento (PB-40) | Puntos 2.1 y 4.3; anexo técnico |
+| SCANOSS | Sí por defecto (`scanoss: false` lo apaga) | Punto 2.4; solo envía huellas |
+| Dolos | No | Compara equipos entre sí; con un solo repositorio no aplica |
+| Revisión con IA (OpenRouter) | Solo con `ai-review: true` y `openrouter-api-key` (ver [Revisión con IA vía OpenRouter](#revisión-con-ia-vía-openrouter-opcional)) | Puntos 1.3, 2.1, 2.2, 2.4, 3.1–3.4 y 4.1 como borrador; apagada quedan como **Manual review** y el costo sigue en cero |
+| Búsqueda web de ideas parecidas | No | El modelo no navega; el punto 2.4 solo usa SCANOSS y git |
+| Reporte | `reporte.md` en inglés con la plantilla de [Entregables](#entregables) | Mismo formato que el evento |
+
+### Entradas y salidas
+
+| Entrada | Por defecto | Uso |
+| --- | --- | --- |
+| `event-name` | Nombre del repositorio | Título del reporte |
+| `project`, `objective` | Vacíos | Etiquetas del reporte |
+| `event-start`, `event-end` | Sin ventana | Commits fuera del sprint; sin ventana, esa señal queda "sin dato" |
+| `members` | Vacío | Una línea `usuario-github: Nombre` por integrante; sin integrantes, 1.2 compara solo número de autores |
+| `scanoss` | `true` | Activa SCANOSS |
+| `fail-on` | `none` | `none`: solo informa · `secrets`: falla si el punto 4.3 no cumple · `fail`: falla si algún punto no cumple |
+| `retention-days` | `7` | Días que GitHub guarda el artifact |
+| `ai-review` | `false` | Activa la revisión con IA; el workflow tiene que pedirla de forma explícita |
+| `openrouter-api-key` | Vacío | Key de OpenRouter, siempre desde un secreto del repositorio (`${{ secrets.OPENROUTER_API_KEY }}`); por sí sola no activa nada |
+| `ai-model` | `deepseek/deepseek-v4.1-flash` | Modelo de OpenRouter para la revisión con IA |
+| `ai-max-input-chars` | `200000` | Tope de texto del repositorio que se envía al modelo; limita el costo |
+
+| Salida | Contenido |
+| --- | --- |
+| Resumen de la ejecución (`GITHUB_STEP_SUMMARY`) | Tabla del checklist (*Pass / Fail / Manual review*) y hallazgos clave |
+| Artifact `acr-report` | `reporte.md`, JSON de resultados y SARIF/Markdown de MegaLinter |
+| Outputs del paso | `report-path`, `pass`, `fail`, `manual` |
+
+### Revisión con IA vía OpenRouter (opcional)
+
+Sustituye a Claude Code cuando no hay una persona revisando: una sola llamada al modelo, sin herramientas ni navegación, que produce el mismo `review.json` que la [Revisión asistida](#revisión-asistida-con-claude-code).
+
+- **Apagada por defecto:** solo corre si `ACR_AI_REVIEW` vale `true`. La acción la llena desde la entrada `ai-review` (por defecto `false`), así que el workflow de cada repositorio decide de forma explícita. Tener la key no basta para activarla.
+- **Variables:** `ACR_AI_REVIEW` (activa), `OPENROUTER_API_KEY` (key) y `ACR_AI_MODEL` (modelo, por defecto `deepseek/deepseek-v4.1-flash`). La acción las llena desde `ai-review`, `openrouter-api-key` y `ai-model`.
+- **Activada sin key:** el paso se omite con un aviso en el resumen y no hace fallar el pipeline. Pasa, por ejemplo, en *pull requests* desde forks, donde GitHub no entrega secretos.
+- **También en local:** `acr ai-review [ID]` lee `equipos.yml` como los demás comandos y escribe en `reports/<id>/`, con la misma variable `ACR_AI_REVIEW`. No forma parte de `acr analyze`. En el evento envía código de los equipos a un tercero, así que solo se activa si los organizadores lo permiten; si no, se sigue con Claude Code.
+- **Qué se envía:** el prompt de `acr/prompts/review.md` adaptado a una sola llamada, el árbol de archivos, el README, los archivos de dependencias y los archivos de código más relevantes hasta `ai-max-input-chars`, más un resumen de `scc.json`, `git-signals.json` y `scanoss.json`. **Nunca** se envían los archivos donde Betterleaks encontró un secreto ni archivos tipo `.env`, llaves o certificados. El contenido del repositorio va delimitado y marcado como datos, no instrucciones.
+- **Privacidad del proveedor:** la petición pide a OpenRouter solo proveedores que no guardan ni entrenan con los datos (`provider.data_collection: "deny"`).
+- **Salida:** la respuesta se pide en JSON y pasa por el mismo validador de `acr review-validate`. Si no es válida, se reintenta una vez con los errores; si sigue sin serlo, se descarta y los puntos quedan en *Manual review*. `review.json` registra el modelo usado (`generated_by`), con `status: "draft"`.
+- **Costo:** el resumen de la ejecución muestra los tokens usados y el costo que devuelve OpenRouter.
+- **La key nunca** aparece en el log, el resumen, el artifact ni los mensajes de error.
+- **El PDF de prompts y la presentación** no se envían (no hay librería para leer PDF): 3.4 y 4.1 usan solo el README y el código.
+
+### Reglas
+
+- **Acción compuesta** (`action.yml` en la raíz): instala Python 3.12, `acr`, scc y scanoss-py con versiones fijas y corre `acr ci`. Solo runners Linux (MegaLinter necesita Docker); en otro sistema falla con un mensaje claro.
+- **`acr ci`:** comando nuevo y el único que invoca la acción. Arma la configuración en memoria con un solo equipo, sin opción `--config` y sin leer `equipos.yml` aunque exista; solo copia el workspace (no clona ni descarga otros repositorios); usa como `id` el nombre del repositorio saneado (minúsculas, números y guiones) y escribe todo en `RUNNER_TEMP`, nunca en el workspace, para que el reporte no termine en un commit.
+- **Clon superficial:** si el checkout no trae historial completo, la acción avisa y las señales de git quedan "sin dato" en lugar de dar un resultado engañoso.
+- **No ejecuta** el código del repositorio: no instala dependencias ni compila.
+- **Secretos:** el log, el resumen y el artifact siguen la misma regla que el reporte (Betterleaks con `--redact`, nunca el valor). En repositorios públicos el log y los artifacts son visibles para otros usuarios de GitHub.
+- **Permisos:** solo `contents: read`; la acción no usa el token de GitHub. El único secreto es la key opcional de OpenRouter; sin ella todo lo demás funciona, también en *pull requests* desde forks.
+- **Versiones:** las acciones de terceros que usa (`setup-python`, `upload-artifact`) se fijan por SHA; la imagen de MegaLinter, por versión. Se publica con tags semánticos (`v1.0.0`) y un tag móvil `v1`.
+- **Formativo:** igual que en el evento, cada marca automática es un borrador; el resumen lo dice.
+- **`fail-on` solo usa marcas deterministas** (1.1, 1.2 y 4.3): una marca de la IA nunca hace fallar el pipeline, porque el código revisado podría manipularla.
+
 ## Entorno, seguridad y privacidad
 
 El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y sin publicarlo.
@@ -524,6 +625,12 @@ El código es de estudiantes y de terceros: se analiza aislado, sin ejecutarlo y
 | Dolos no soporta un lenguaje usado | Comparar solo los lenguajes soportados y reportarlo |
 | Reportes exportados desactualizados tras re-analizar | Regenerar exportaciones en el mismo paso del pipeline |
 | Falsos positivos de las herramientas o de la IA | Toda conclusión la valida el revisor |
+| GitHub Action: muchos repositorios agotan el límite gratuito de SCANOSS desde runners compartidos | `scanoss: false`; si SCANOSS falla, el reporte lo marca como resultado faltante y la acción no falla por eso |
+| GitHub Action: un linter de MegaLinter carga archivos de configuración ejecutables del repositorio (por ejemplo `eslint.config.js`) | Revisar `.mega-linter.yml` antes de publicar la acción; el riesgo ya existe en local |
+| GitHub Action: un cambio en este repositorio rompe el pipeline de otros | Tags semánticos; `v1` solo avanza con cambios compatibles |
+| Revisión con IA: el código revisado incluye instrucciones para el modelo (*prompt injection*) | Contenido delimitado como datos, salida validada contra el esquema, marcas solo como borrador y fuera de `fail-on` |
+| Revisión con IA: el modelo por defecto cambia de nombre, de precio o deja de existir en OpenRouter | `ai-model` lo cambia sin tocar código; si el modelo no existe, el paso se omite con un mensaje claro |
+| Revisión con IA: un repositorio grande dispara el costo | Tope `ai-max-input-chars` y costo visible en el resumen |
 
 **Resueltos con los organizadores:**
 
