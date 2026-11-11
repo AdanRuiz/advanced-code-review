@@ -52,6 +52,8 @@ MAX_ROWS = 20
 MAX_EVIDENCE = 5
 # Point 1.1: a commit with at least this % of the added code is a bulk upload to explain.
 BULK_COMMIT_PERCENT = 50.0
+# ``acr ci`` (PB-62): the checkout had only part of the history.
+SHALLOW_NOTE = "Shallow clone: the git history is incomplete; check out with `fetch-depth: 0`."
 
 # MegaLinter runs the linters on the repository mounted here (acr.megalinter.WORKSPACE).
 _WORKSPACE_PREFIXES = ("/tmp/lint/", "tmp/lint/")
@@ -418,6 +420,8 @@ def _mark_commits(sources: Sources, team_id: str) -> Mark:
     signals = sources.data.get("git-signals.json")
     if signals is None:
         return Mark(MANUAL, sources.note("git-signals.json", f"acr git-signals {team_id}"))
+    if signals.get("shallow_clone"):
+        return Mark(MANUAL, SHALLOW_NOTE)
     if not signals.get("has_git"):
         return Mark(MANUAL, "The submission has no git history (folder or ZIP without `.git`).")
     count = signals.get("commit_count") or 0
@@ -443,6 +447,8 @@ def _mark_collaboration(sources: Sources, team_id: str) -> Mark:
     signals = sources.data.get("git-signals.json")
     if signals is None:
         return Mark(MANUAL, sources.note("git-signals.json", f"acr git-signals {team_id}"))
+    if signals.get("shallow_clone"):
+        return Mark(MANUAL, SHALLOW_NOTE)
     if not signals.get("has_git") or not signals.get("author_count"):
         return Mark(MANUAL, "No commit authors to compare (no git history or no commits).")
     authors = [_dict(a) for a in _list(signals.get("authors"))]
@@ -538,11 +544,16 @@ def _languages(sources: Sources, team_id: str) -> str:
     return f"{names}; {totals.get('code', 0)} lines of code in {totals.get('files', 0)} file(s)"
 
 
+def secret_findings(sarif: dict[str, Any]) -> list[Finding]:
+    """Betterleaks (or Gitleaks) results of ``megalinter.sarif``: rule, file and line, never the value."""
+    return [f for f in sarif_findings(sarif) if _is_tool(f.tool, _SECRET_TOOLS)]
+
+
 def _secrets(sources: Sources) -> list[Finding] | None:
     sarif = sources.data.get("megalinter.sarif")
     if sarif is None:
         return None
-    return [f for f in sarif_findings(sarif) if _is_tool(f.tool, _SECRET_TOOLS)]
+    return secret_findings(sarif)
 
 
 def quality_grade(clean: int, warnings_only: int, total: int) -> tuple[float, str]:
@@ -809,6 +820,8 @@ def _git(sources: Sources, team_id: str) -> tuple[str, dict[str, Any]]:
     signals = sources.data.get("git-signals.json")
     if signals is None:
         return sources.note("git-signals.json", f"acr git-signals {team_id}"), {}
+    if signals.get("shallow_clone"):
+        return SHALLOW_NOTE, {}
     if not signals.get("has_git"):
         return "the submission has no git history (folder or ZIP without `.git`).", {}
     outside = _dict(signals.get("outside_event"))
@@ -816,10 +829,14 @@ def _git(sources: Sources, team_id: str) -> tuple[str, dict[str, Any]]:
     parts = [f"{signals.get('commit_count', 0)} commit(s)"]
     if first.get("author_date"):
         parts.append(f"first on {md(first['author_date'])}")
-    parts.append(
-        f"{outside.get('before_start', 0)} before the sprint started and {outside.get('after_end', 0)} "
-        "after it ended"
-    )
+    if signals.get("outside_event") is None:
+        # acr ci without event-start/event-end: there is no sprint window to compare with.
+        parts.append("no sprint window given")
+    else:
+        parts.append(
+            f"{outside.get('before_start', 0)} before the sprint started and "
+            f"{outside.get('after_end', 0)} after it ended"
+        )
     if signals.get("single_commit"):
         parts.append("**single commit with all the code**")
     if signals.get("author_count") is not None:

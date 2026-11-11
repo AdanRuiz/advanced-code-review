@@ -23,7 +23,15 @@
   "properties": {
     "schema_version": { "const": 2 },
     "team_id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$" },
-    "tool": { "const": "claude-code" },
+    "tool": {
+      "enum": ["claude-code", "openrouter"],
+      "description": "claude-code: revisión asistida con Claude Code; openrouter: acr ai-review (PB-63)"
+    },
+    "generated_by": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Modelo de OpenRouter que escribió el borrador (acr ai-review)"
+    },
     "generated_at": {
       "type": "string",
       "description": "Fecha y hora ISO 8601 con zona horaria",
@@ -232,6 +240,7 @@
         "source": {
           "enum": [
             "claude-code",
+            "openrouter",
             "scc",
             "megalinter",
             "semgrep",

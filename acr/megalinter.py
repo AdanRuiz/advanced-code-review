@@ -77,6 +77,8 @@ class MegaLinterResult:
     returncode: int
     files: list[Path] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
+    # Temporary copy that could not be deleted (e.g. files the container wrote as root).
+    leftover: Path | None = None
 
 
 def find_engine(preferred: str | None = None, which: Which = shutil.which) -> str:
@@ -245,6 +247,7 @@ def run_megalinter(
     remove_tree(staging)
     staging.mkdir()
     workspace = None
+    leftover = None
     try:
         try:
             workspace = writable_copy(repo, temp_dir, team_id)
@@ -262,7 +265,11 @@ def run_megalinter(
     finally:
         remove_tree(staging)
         if workspace is not None:
-            remove_tree(workspace.parent)
+            try:
+                remove_tree(workspace.parent)
+            except OSError:
+                # Docker without rootless mode leaves root-owned files; the reports are kept anyway.
+                leftover = workspace.parent
 
     files = []
     for name in MAIN_REPORTS:
@@ -277,4 +284,4 @@ def run_megalinter(
         else:
             target.unlink(missing_ok=True)  # never keep a stale result from a previous run
             missing.append(name)
-    return MegaLinterResult(returncode=returncode, files=files, missing=missing)
+    return MegaLinterResult(returncode=returncode, files=files, missing=missing, leftover=leftover)

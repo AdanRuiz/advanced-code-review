@@ -198,6 +198,8 @@ def _megalinter(args: argparse.Namespace) -> int:
         print(f"{team.id}: MegaLinter {outcome} -> {names} en {(DEFAULT_REPORTS_DIR / team.id).as_posix()}")
         if result.missing:
             print(f"{team.id}: aviso: no se generó {', '.join(result.missing)}", file=sys.stderr)
+        if result.leftover is not None:
+            print(f"{team.id}: aviso: no se pudo borrar la copia temporal {result.leftover}", file=sys.stderr)
     if failed:
         print(f"acr megalinter: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
         return EXIT_ERROR
@@ -594,6 +596,60 @@ def _export(args: argparse.Namespace) -> int:
     return EXIT_OK if ok else EXIT_ERROR
 
 
+def _ai_review(args: argparse.Namespace) -> int:
+    """PB-63: AI review through OpenRouter, off unless ACR_AI_REVIEW is true."""
+    from acr.ai_review import ENV_ENABLED, AiReviewError, Settings, describe, write_ai_review
+
+    try:
+        settings = Settings.from_env()
+    except AiReviewError as exc:
+        print(f"acr ai-review: {exc}", file=sys.stderr)
+        return EXIT_ERROR
+    reason = settings.skip_reason()
+    if reason:
+        print(f"acr ai-review: {reason}. Para activarla: {ENV_ENABLED}=true y OPENROUTER_API_KEY; "
+              "en el evento, solo si los organizadores lo permiten (envía código a un tercero).",
+              file=sys.stderr)
+        return EXIT_ERROR
+    config, errors = load_config(args.config)
+    if config is None or errors:
+        print(f"{args.config}: {len(errors)} error(es); corre 'acr validate'", file=sys.stderr)
+        for error in errors:
+            print(f"  - {error}", file=sys.stderr)
+        return EXIT_ERROR
+    teams = config.equipos
+    if args.team_id is not None:
+        teams = tuple(team for team in teams if team.id == args.team_id)
+        if not teams:
+            print(f"acr ai-review: no hay un equipo con id {args.team_id!r}", file=sys.stderr)
+            return EXIT_ERROR
+    failed = 0
+    for team in teams:
+        try:
+            result = write_ai_review(
+                team, config.evento.nombre, settings, DEFAULT_REPOS_DIR, DEFAULT_REPORTS_DIR
+            )
+        except (AiReviewError, OSError) as exc:
+            failed += 1
+            print(f"{team.id}: error: {exc}", file=sys.stderr)
+            continue
+        print(f"{team.id}: {describe(result)} -> {result.path.as_posix()}")
+    if failed:
+        print(f"acr ai-review: {failed} de {len(teams)} equipo(s) con error", file=sys.stderr)
+        return EXIT_ERROR
+    return EXIT_OK
+
+
+def _ci(args: argparse.Namespace) -> int:
+    """PB-62: GitHub Action mode; validates only the workspace and never reads equipos.yml."""
+    from acr.ci import main_ci
+
+    if args.config != DEFAULT_CONFIG:
+        print("acr ci: no usa --config; la acción nunca lee equipos.yml", file=sys.stderr)
+        return 2
+    return main_ci(workspace=args.path, out=args.out)
+
+
 def _serve(args: argparse.Namespace) -> int:
     """PB-24: run the orchestrator API over equipos.yml, listening on 127.0.0.1 only."""
     from acr.orchestrator import DEFAULT_HOST, serve
@@ -848,6 +904,31 @@ def build_parser() -> argparse.ArgumentParser:
         help="enlace al dashboard local de Grafana en el reporte (por defecto: %(default)s)",
     )
     export.set_defaults(handler=_export)
+
+    ai_review = subparsers.add_parser(
+        "ai-review",
+        help="revisión con IA vía OpenRouter (apagada salvo ACR_AI_REVIEW=true) en reports/<id>/review.json",
+        description="Envía a un modelo de OpenRouter (OPENROUTER_API_KEY, ACR_AI_MODEL) el árbol de "
+        "archivos, el README, los manifiestos y el código más relevante de repos/<id>, sin los archivos "
+        "con secretos, y escribe el borrador en reports/<id>/review.json. Apagada por defecto: solo "
+        "corre con ACR_AI_REVIEW=true. Envía código a un tercero; nunca lo ejecuta.",
+    )
+    ai_review.add_argument("team_id", nargs="?", metavar="ID", help="solo este equipo (por defecto: todos)")
+    ai_review.set_defaults(handler=_ai_review)
+
+    ci = subparsers.add_parser(
+        "ci",
+        help="modo GitHub Action: valida solo el repositorio del workspace (nunca lee equipos.yml)",
+        description="Lo invoca la GitHub Action. Valida solo el repositorio del workspace con las "
+        "entradas ACR_* de la acción: git, scc, MegaLinter, SCANOSS, revisión con IA opcional y "
+        "reporte. Nunca lee equipos.yml ni obtiene otros repositorios. Escribe en --out "
+        "(por defecto $RUNNER_TEMP/acr), nunca en el workspace.",
+    )
+    ci.add_argument("--path", default=None, metavar="CARPETA",
+                    help="repositorio a validar (por defecto: ACR_PATH o GITHUB_WORKSPACE)")
+    ci.add_argument("--out", default=None, metavar="CARPETA",
+                    help="carpeta de salida fuera del repositorio (por defecto: $RUNNER_TEMP/acr)")
+    ci.set_defaults(handler=_ci)
 
     serve = subparsers.add_parser(
         "serve",
