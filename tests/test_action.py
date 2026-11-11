@@ -30,7 +30,7 @@ def test_ai_review_is_off_by_default_and_uses_v41_flash():
     inputs = ACTION["inputs"]
     assert inputs["ai-review"]["default"] == "false"
     assert inputs["openrouter-api-key"]["default"] == ""
-    assert inputs["ai-model"]["default"] == "deepseek/deepseek-v4.1-flash"
+    assert inputs["ai-model"]["default"] == "deepseek/deepseek-v4.1-flash-1017"
     assert inputs["fail-on"]["default"] == "none"
 
 

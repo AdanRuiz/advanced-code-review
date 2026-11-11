@@ -121,7 +121,7 @@ def test_enabled_without_key_is_skipped():
 def test_enabled_with_key_uses_default_model():
     settings = Settings.from_env({"ACR_AI_REVIEW": "TRUE", "OPENROUTER_API_KEY": KEY})
     assert settings.skip_reason() is None
-    assert settings.model == "deepseek/deepseek-v4.1-flash"
+    assert settings.model == "deepseek/deepseek-v4.1-flash-1017"
     assert settings.max_input_chars == 200_000
 
 

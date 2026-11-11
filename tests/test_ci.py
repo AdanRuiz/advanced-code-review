@@ -288,11 +288,11 @@ def test_ai_review_enabled_with_key(tmp_path, workspace, tools, monkeypatch):
     monkeypatch.setattr(ci, "write_ai_review", fake)
     logs = []
     env, summary, _ = env_for(tmp_path, workspace, ACR_AI_REVIEW="true", OPENROUTER_API_KEY=key,
-                              ACR_AI_MODEL="deepseek/deepseek-v4.1-flash")
+                              ACR_AI_MODEL="deepseek/deepseek-v4.1-flash-1017")
     assert main_ci(env, log=logs.append) == 0
-    assert seen == {"model": "deepseek/deepseek-v4.1-flash", "team": "my-repo"}
+    assert seen == {"model": "deepseek/deepseek-v4.1-flash-1017", "team": "my-repo"}
     text = summary.read_text(encoding="utf-8")
-    assert "draft by `deepseek/deepseek-v4.1-flash`" in text and "cost USD 0.0002" in text
+    assert "draft by `deepseek/deepseek-v4.1-flash-1017`" in text and "cost USD 0.0002" in text
     assert key not in text and not any(key in line for line in logs)
 
 

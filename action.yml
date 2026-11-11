@@ -51,7 +51,7 @@ inputs:
     default: ""
   ai-model:
     description: OpenRouter model for the AI review.
-    default: deepseek/deepseek-v4.1-flash
+    default: deepseek/deepseek-v4.1-flash-1017
   ai-max-input-chars:
     description: Maximum characters of the repository sent to the model (limits the cost).
     default: "200000"

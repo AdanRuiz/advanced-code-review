@@ -306,10 +306,10 @@ def test_invalid_review_files_are_not_used(tmp_path):
 def test_openrouter_review_names_the_model(tmp_path):
     data = review_data()
     data["tool"] = "openrouter"
-    data["generated_by"] = "deepseek/deepseek-v4.1-flash"
+    data["generated_by"] = "deepseek/deepseek-v4.1-flash-1017"
     write_json(tmp_path / "equipo-01" / "review.json", data)
     text = build_report(TEAM, EVENT, tmp_path, now=NOW)
-    assert "AI review by `deepseek/deepseek-v4.1-flash` via OpenRouter (draft):" in text
+    assert "AI review by `deepseek/deepseek-v4.1-flash-1017` via OpenRouter (draft):" in text
 
 
 def test_review_with_another_team_id_is_rejected(tmp_path):

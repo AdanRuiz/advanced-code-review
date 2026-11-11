@@ -329,7 +329,7 @@ Cualquier persona puede validar **su propio repositorio** con el mismo análisis
                analopez: Ana López
              ai-review: true                                        # opcional: false por defecto
              openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}  # requerida si ai-review es true
-             ai-model: deepseek/deepseek-v4.1-flash                   # opcional
+             ai-model: deepseek/deepseek-v4.1-flash-1017                   # opcional
              fail-on: none             # none | secrets | fail
    ```
 
@@ -346,7 +346,7 @@ Cualquier persona puede validar **su propio repositorio** con el mismo análisis
 | `scanoss` | `true` | Busca coincidencias con código open source (solo envía huellas) |
 | `ai-review` | `false` | Activa la revisión con IA de forma explícita |
 | `openrouter-api-key` | Vacío | Key para la revisión con IA; pásala siempre desde un secreto. Por sí sola no activa nada |
-| `ai-model` | `deepseek/deepseek-v4.1-flash` | Cualquier modelo de OpenRouter |
+| `ai-model` | `deepseek/deepseek-v4.1-flash-1017` | Cualquier modelo de OpenRouter |
 | `ai-max-input-chars` | `200000` | Tope de texto enviado al modelo, para limitar el costo |
 | `fail-on` | `none` | `secrets` falla si hay secretos; `fail` falla si un punto no cumple (las marcas de IA nunca hacen fallar) |
 | `retention-days` | `7` | Días que se guarda el artifact |

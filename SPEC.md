@@ -536,7 +536,7 @@ jobs:
             analopez: Ana López
           ai-review: true                                        # opcional: apagada por defecto
           openrouter-api-key: ${{ secrets.OPENROUTER_API_KEY }}  # requerida si ai-review es true
-          ai-model: deepseek/deepseek-v4.1-flash                   # opcional
+          ai-model: deepseek/deepseek-v4.1-flash-1017                   # opcional
 ```
 
 ### Qué corre
@@ -568,7 +568,7 @@ jobs:
 | `path` | El workspace | Carpeta del repositorio a validar, con su `.git` |
 | `ai-review` | `false` | Activa la revisión con IA; el workflow tiene que pedirla de forma explícita |
 | `openrouter-api-key` | Vacío | Key de OpenRouter, siempre desde un secreto del repositorio (`${{ secrets.OPENROUTER_API_KEY }}`); por sí sola no activa nada |
-| `ai-model` | `deepseek/deepseek-v4.1-flash` | Modelo de OpenRouter para la revisión con IA |
+| `ai-model` | `deepseek/deepseek-v4.1-flash-1017` | Modelo de OpenRouter para la revisión con IA |
 | `ai-max-input-chars` | `200000` | Tope de texto del repositorio que se envía al modelo; limita el costo |
 
 | Salida | Contenido |
@@ -582,7 +582,7 @@ jobs:
 Sustituye a Claude Code cuando no hay una persona revisando: una sola llamada al modelo, sin herramientas ni navegación, que produce el mismo `review.json` que la [Revisión asistida](#revisión-asistida-con-claude-code).
 
 - **Apagada por defecto:** solo corre si `ACR_AI_REVIEW` vale `true`. La acción la llena desde la entrada `ai-review` (por defecto `false`), así que el workflow de cada repositorio decide de forma explícita. Tener la key no basta para activarla.
-- **Variables:** `ACR_AI_REVIEW` (activa), `OPENROUTER_API_KEY` (key) y `ACR_AI_MODEL` (modelo, por defecto `deepseek/deepseek-v4.1-flash`). La acción las llena desde `ai-review`, `openrouter-api-key` y `ai-model`.
+- **Variables:** `ACR_AI_REVIEW` (activa), `OPENROUTER_API_KEY` (key) y `ACR_AI_MODEL` (modelo, por defecto `deepseek/deepseek-v4.1-flash-1017`). La acción las llena desde `ai-review`, `openrouter-api-key` y `ai-model`.
 - **Activada sin key:** el paso se omite con un aviso en el resumen y no hace fallar el pipeline. Pasa, por ejemplo, en *pull requests* desde forks, donde GitHub no entrega secretos.
 - **También en local:** `acr ai-review [ID]` lee `equipos.yml` como los demás comandos y escribe en `reports/<id>/`, con la misma variable `ACR_AI_REVIEW`. No forma parte de `acr analyze`. En el evento envía código de los equipos a un tercero, así que solo se activa si los organizadores lo permiten; si no, se sigue con Claude Code.
 - **Qué se envía:** el prompt de `acr/prompts/review.md` adaptado a una sola llamada, el árbol de archivos, el README, los archivos de dependencias y los archivos de código más relevantes hasta `ai-max-input-chars`, más un resumen de `scc.json`, `git-signals.json` y `scanoss.json`. **Nunca** se envían los archivos donde Betterleaks encontró un secreto ni archivos tipo `.env`, llaves o certificados. El contenido del repositorio va delimitado y marcado como datos, no instrucciones.
